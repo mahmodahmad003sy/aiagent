@@ -282,61 +282,33 @@
 	endDate={getDateRange(selectedPeriod).end}
 />
 
-<!-- Summary cards -->
+<!-- Summary stats -->
 {#if !loading}
-	<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-		<div
-			class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"
+	<div class="flex gap-3 text-xs text-gray-500 dark:text-gray-400 px-0.5 pb-2">
+		<span
+			><span class="font-normal text-gray-900 dark:text-gray-300"
+				>{summary.total_messages.toLocaleString()}</span
+			>
+			{$i18n.t('messages')}</span
 		>
-			<div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-				{$i18n.t('Messages')}
-			</div>
-
-			<div class="text-2xl font-semibold text-gray-900 dark:text-white">
-				{summary.total_messages.toLocaleString()}
-			</div>
-		</div>
-
-		<div
-			class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"
+		<Tooltip content={$i18n.t('Token counts are estimates and may not reflect actual API usage')}>
+			<span class="cursor-help"
+				><span class="font-normal text-gray-900 dark:text-gray-300"
+					>{formatNumber(totalTokens.total)}</span
+				>
+				{$i18n.t('tokens')}</span
+			>
+		</Tooltip>
+		<span
+			><span class="font-normal text-gray-900 dark:text-gray-300"
+				>{summary.total_chats.toLocaleString()}</span
+			>
+			{$i18n.t('chats')}</span
 		>
-			<div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-				{$i18n.t('Tokens')}
-			</div>
-
-			<div class="text-2xl font-semibold text-gray-900 dark:text-white">
-				{formatNumber(totalTokens.total)}
-			</div>
-
-			<div class="text-[11px] text-gray-400 mt-1">
-				{formatNumber(totalTokens.input)} in /
-				{formatNumber(totalTokens.output)} out
-			</div>
-		</div>
-
-		<div
-			class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"
+		<span
+			><span class="font-normal text-gray-900 dark:text-gray-300">{summary.total_users}</span>
+			{$i18n.t('users')}</span
 		>
-			<div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-				{$i18n.t('Chats')}
-			</div>
-
-			<div class="text-2xl font-semibold text-gray-900 dark:text-white">
-				{summary.total_chats.toLocaleString()}
-			</div>
-		</div>
-
-		<div
-			class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"
-		>
-			<div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-				{$i18n.t('Active Users')}
-			</div>
-
-			<div class="text-2xl font-semibold text-gray-900 dark:text-white">
-				{summary.total_users.toLocaleString()}
-			</div>
-		</div>
 	</div>
 
 	<!-- Daily usage chart -->
