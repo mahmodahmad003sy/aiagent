@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Optional
 
 from open_webui.internal.db import Base, get_async_db_context
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import JSON, BigInteger, Boolean, Column, ForeignKey, Index, Text, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -133,6 +133,38 @@ class ChatWidgetForm(BaseModel):
     allowed_domains: list[str] = Field(default_factory=list)
     model_config = ConfigDict(extra='forbid')
 
+    @field_validator('allowed_domains')
+    @classmethod
+    def normalize_allowed_domains(cls, value: list[str]) -> list[str]:
+        domains = []
+        for domain in value or []:
+            normalized = domain.strip().lower()
+            if normalized and normalized not in domains:
+                domains.append(normalized)
+        return domains
+
+
+class ChatWidgetUpdateForm(BaseModel):
+    name: Optional[str] = None
+    model_id: Optional[str] = None
+    system_prompt: Optional[str] = None
+    welcome_message: Optional[str] = None
+    enabled: Optional[bool] = None
+    allowed_domains: Optional[list[str]] = None
+    model_config = ConfigDict(extra='forbid')
+
+    @field_validator('allowed_domains')
+    @classmethod
+    def normalize_allowed_domains(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        if value is None:
+            return None
+        domains = []
+        for domain in value:
+            normalized = domain.strip().lower()
+            if normalized and normalized not in domains:
+                domains.append(normalized)
+        return domains
+
 
 class ChatWidgetSessionForm(BaseModel):
     visitor_id: str
@@ -200,6 +232,47 @@ class ChatWidgetTable:
                 select(ChatWidget).filter_by(user_id=user_id).order_by(ChatWidget.updated_at.desc())
             )
             return [ChatWidgetModel.model_validate(widget) for widget in result.scalars().all()]
+
+    async def update_widget_by_id_and_user_id(
+        self,
+        id: str,
+        user_id: str,
+        form_data: ChatWidgetUpdateForm,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[ChatWidgetModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(select(ChatWidget).filter_by(id=id, user_id=user_id))
+            widget = result.scalars().first()
+            if not widget:
+                return None
+
+            data = form_data.model_dump(exclude_unset=True)
+            for key, value in data.items():
+                setattr(widget, key, value)
+            widget.updated_at = int(time.time())
+
+            await db.commit()
+            await db.refresh(widget)
+            return ChatWidgetModel.model_validate(widget)
+
+    async def rotate_token_by_id_and_user_id(
+        self,
+        id: str,
+        user_id: str,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[ChatWidgetModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(select(ChatWidget).filter_by(id=id, user_id=user_id))
+            widget = result.scalars().first()
+            if not widget:
+                return None
+
+            widget.token = generate_widget_token()
+            widget.updated_at = int(time.time())
+
+            await db.commit()
+            await db.refresh(widget)
+            return ChatWidgetModel.model_validate(widget)
 
     async def delete_widget_by_id_and_user_id(
         self, id: str, user_id: str, db: Optional[AsyncSession] = None
