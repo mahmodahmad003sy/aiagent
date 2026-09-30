@@ -313,6 +313,14 @@ class ChatWidgetSessionTable:
             session = await db.get(ChatWidgetSession, id)
             return ChatWidgetSessionModel.model_validate(session) if session else None
 
+    async def get_session_by_id_and_widget_id(
+        self, id: str, widget_id: str, db: Optional[AsyncSession] = None
+    ) -> Optional[ChatWidgetSessionModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(select(ChatWidgetSession).filter_by(id=id, widget_id=widget_id))
+            session = result.scalars().first()
+            return ChatWidgetSessionModel.model_validate(session) if session else None
+
 
 class ChatWidgetMessageTable:
     async def insert_new_message(
@@ -333,6 +341,14 @@ class ChatWidgetMessageTable:
                 **form_data.model_dump(),
             )
             db.add(message)
+
+            result = await db.execute(select(ChatWidgetSession).filter_by(id=session_id, widget_id=widget_id))
+            session = result.scalars().first()
+            if session:
+                session.message_count = (session.message_count or 0) + 1
+                session.updated_at = now
+                session.last_activity_at = now
+
             await db.commit()
             await db.refresh(message)
             return ChatWidgetMessageModel.model_validate(message)
