@@ -9,6 +9,7 @@ from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.chat_widgets import (
     ChatWidgetMessageForm,
+    ChatWidgetMessageModel,
     ChatWidgetMessages,
     ChatWidgetForm,
     ChatWidgetModel,
@@ -19,9 +20,12 @@ from open_webui.models.chat_widgets import (
 )
 from open_webui.models.users import Users
 from open_webui.utils.auth import get_verified_user
+from open_webui.utils.chat import generate_chat_completion
+from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.models import get_all_models, get_filtered_models
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response, StreamingResponse
 
 router = APIRouter()
 
@@ -37,6 +41,7 @@ class PublicWidgetChatForm(BaseModel):
     widget_id: Optional[str] = None
     session_id: Optional[str] = None
     visitor_id: Optional[str] = None
+    stream: bool = False
     model_config = ConfigDict(extra='forbid')
 
     @field_validator('message')
@@ -52,6 +57,8 @@ class PublicWidgetChatResponse(BaseModel):
     widget_id: str
     session_id: str
     message_id: str
+    assistant_message_id: Optional[str] = None
+    content: Optional[str] = None
     accepted: bool = True
 
 
@@ -161,6 +168,164 @@ async def _get_public_widget(
     return widget, owner
 
 
+def _message_content_as_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get('text') or item.get('content')
+                if isinstance(text, str):
+                    parts.append(text)
+            elif isinstance(item, str):
+                parts.append(item)
+        return ''.join(parts)
+    return '' if content is None else str(content)
+
+
+def _messages_for_completion(widget: ChatWidgetModel, messages: list[ChatWidgetMessageModel]) -> list[dict]:
+    completion_messages = []
+    if widget.system_prompt:
+        completion_messages.append({'role': 'system', 'content': widget.system_prompt})
+
+    for message in messages:
+        if message.role not in {'user', 'assistant', 'system'}:
+            continue
+        content = _message_content_as_text(message.content)
+        if content:
+            completion_messages.append({'role': message.role, 'content': content})
+
+    return completion_messages
+
+
+def _extract_response_content(response) -> tuple[str, dict | None]:
+    if not isinstance(response, dict):
+        return str(response or ''), None
+
+    choices = response.get('choices') or []
+    if choices and isinstance(choices[0], dict):
+        message = choices[0].get('message') or {}
+        content = message.get('content')
+        if isinstance(content, str):
+            return content, response.get('usage')
+        if isinstance(content, list):
+            return _message_content_as_text(content), response.get('usage')
+
+        text = choices[0].get('text')
+        if isinstance(text, str):
+            return text, response.get('usage')
+
+    content = response.get('content')
+    if isinstance(content, str):
+        return content, response.get('usage')
+
+    return '', response.get('usage')
+
+
+def _extract_stream_delta(data: dict) -> str:
+    choices = data.get('choices') or []
+    if not choices or not isinstance(choices[0], dict):
+        return ''
+
+    delta = choices[0].get('delta') or {}
+    content = delta.get('content')
+    if isinstance(content, str):
+        return content
+
+    message = choices[0].get('message') or {}
+    content = message.get('content')
+    return content if isinstance(content, str) else ''
+
+
+async def _save_assistant_message(
+    session_id: str,
+    widget_id: str,
+    model_id: str,
+    content: str,
+    usage: Optional[dict] = None,
+    error: Optional[dict | str] = None,
+    db: AsyncSession | None = None,
+) -> ChatWidgetMessageModel:
+    return await ChatWidgetMessages.insert_new_message(
+        session_id,
+        widget_id,
+        ChatWidgetMessageForm(
+            role='assistant',
+            content=content,
+            model_id=model_id,
+            done=True,
+            usage=usage,
+            error=error,
+        ),
+        db=db,
+    )
+
+
+async def _stream_widget_response(
+    response: StreamingResponse,
+    session_id: str,
+    widget_id: str,
+    model_id: str,
+    db: AsyncSession,
+):
+    content_parts: list[str] = []
+    usage = None
+    error = None
+
+    async def iterator():
+        nonlocal usage, error
+        buffer = ''
+
+        def process_event(event: str) -> None:
+            nonlocal usage, error
+            for line in event.splitlines():
+                line = line.strip()
+                if not line.startswith('data:'):
+                    continue
+                payload = line[5:].strip()
+                if not payload or payload == '[DONE]':
+                    continue
+                try:
+                    data = JSONCodec.loads(payload)
+                except Exception:
+                    continue
+                if isinstance(data, dict):
+                    content_parts.append(_extract_stream_delta(data))
+                    usage = data.get('usage') or usage
+                    if data.get('error'):
+                        error = data.get('error')
+
+        try:
+            async for chunk in response.body_iterator:
+                text = chunk.decode('utf-8') if isinstance(chunk, bytes) else str(chunk)
+                buffer += text
+                while '\n\n' in buffer:
+                    event, buffer = buffer.split('\n\n', 1)
+                    process_event(event)
+                yield chunk
+        finally:
+            if buffer.strip():
+                process_event(buffer)
+            content = ''.join(content_parts)
+            await _save_assistant_message(
+                session_id,
+                widget_id,
+                model_id,
+                content,
+                usage=usage,
+                error=error,
+                db=db,
+            )
+
+    return StreamingResponse(
+        iterator(),
+        media_type='text/event-stream',
+        status_code=response.status_code,
+        background=response.background,
+    )
+
+
 @router.post('', response_model=ChatWidgetModel)
 async def create_widget(
     request: Request,
@@ -229,10 +394,60 @@ async def create_public_widget_chat_message(
         db=db,
     )
 
+    history = await ChatWidgetMessages.get_messages_by_session_id(session.id, db=db)
+    form_payload = {
+        'model': widget.model_id,
+        'messages': _messages_for_completion(widget, history),
+        'stream': form_data.stream,
+        'metadata': {
+            'widget_id': widget.id,
+            'widget_session_id': session.id,
+            'user_id': owner.id,
+        },
+    }
+
+    try:
+        response = await generate_chat_completion(
+            request,
+            form_payload,
+            owner,
+            bypass_system_prompt=True,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await _save_assistant_message(
+            session.id,
+            widget.id,
+            widget.model_id,
+            '',
+            error={'content': str(exc)},
+            db=db,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    if isinstance(response, Response) and not isinstance(response, StreamingResponse) and response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=ERROR_MESSAGES.DEFAULT())
+
+    if isinstance(response, StreamingResponse):
+        return await _stream_widget_response(response, session.id, widget.id, widget.model_id, db)
+
+    content, usage = _extract_response_content(response)
+    assistant_message = await _save_assistant_message(
+        session.id,
+        widget.id,
+        widget.model_id,
+        content,
+        usage=usage,
+        db=db,
+    )
+
     return PublicWidgetChatResponse(
         widget_id=widget.id,
         session_id=session.id,
         message_id=message.id,
+        assistant_message_id=assistant_message.id,
+        content=content,
     )
 
 
