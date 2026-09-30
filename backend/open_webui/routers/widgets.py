@@ -23,11 +23,33 @@ from open_webui.utils.auth import get_verified_user
 from open_webui.utils.chat import generate_chat_completion
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.models import get_all_models, get_filtered_models
+from open_webui.utils.rate_limit import RateLimiter
+from open_webui.utils.redis import get_redis_client
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
 
 router = APIRouter()
+
+PUBLIC_WIDGET_CHAT_MESSAGE_LIMIT = 20_000
+PUBLIC_WIDGET_REQUEST_BODY_LIMIT = 64 * 1024
+PUBLIC_WIDGET_HISTORY_LIMIT = 40
+PUBLIC_WIDGET_CHAT_RATE_LIMIT = 60
+PUBLIC_WIDGET_VISITOR_RATE_LIMIT = 20
+PUBLIC_WIDGET_RATE_LIMIT_WINDOW = 60
+
+public_widget_chat_rate_limiter = RateLimiter(
+    redis_client=get_redis_client(),
+    limit=PUBLIC_WIDGET_CHAT_RATE_LIMIT,
+    window=PUBLIC_WIDGET_RATE_LIMIT_WINDOW,
+    bucket_size=10,
+)
+public_widget_visitor_rate_limiter = RateLimiter(
+    redis_client=get_redis_client(),
+    limit=PUBLIC_WIDGET_VISITOR_RATE_LIMIT,
+    window=PUBLIC_WIDGET_RATE_LIMIT_WINDOW,
+    bucket_size=10,
+)
 
 
 class PublicWidgetConfigResponse(BaseModel):
@@ -37,10 +59,10 @@ class PublicWidgetConfigResponse(BaseModel):
 
 
 class PublicWidgetChatForm(BaseModel):
-    message: str = Field(min_length=1, max_length=20000)
-    widget_id: Optional[str] = None
-    session_id: Optional[str] = None
-    visitor_id: Optional[str] = None
+    message: str = Field(min_length=1, max_length=PUBLIC_WIDGET_CHAT_MESSAGE_LIMIT)
+    widget_id: Optional[str] = Field(default=None, max_length=128)
+    session_id: Optional[str] = Field(default=None, max_length=128)
+    visitor_id: Optional[str] = Field(default=None, max_length=128)
     stream: bool = False
     model_config = ConfigDict(extra='forbid')
 
@@ -99,6 +121,55 @@ def _get_widget_token(request: Request, token: Optional[str] = None) -> Optional
     return None
 
 
+def _client_key(request: Request) -> str:
+    forwarded_for = request.headers.get('x-forwarded-for')
+    if forwarded_for:
+        return forwarded_for.split(',', 1)[0].strip()
+    return request.client.host if request.client else 'unknown'
+
+
+def _ensure_public_request_size(request: Request) -> None:
+    content_length = request.headers.get('content-length')
+    if not content_length:
+        return
+    try:
+        size = int(content_length)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INCORRECT_FORMAT())
+    if size > PUBLIC_WIDGET_REQUEST_BODY_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=ERROR_MESSAGES.INPUT_TOO_LONG(PUBLIC_WIDGET_REQUEST_BODY_LIMIT),
+        )
+
+
+def _ensure_public_rate_limit(request: Request, widget: ChatWidgetModel, visitor_id: Optional[str]) -> None:
+    widget_key = f'chat_widget:{widget.id}'
+    visitor_key = f'{widget_key}:{visitor_id or _client_key(request)}'
+    if public_widget_chat_rate_limiter.is_limited(widget_key) or public_widget_visitor_rate_limiter.is_limited(
+        visitor_key
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+        )
+
+
+def _set_public_cors_headers(response: Response, request: Request, widget: ChatWidgetModel | None = None) -> None:
+    origin = request.headers.get('origin')
+    if not origin:
+        response.headers.setdefault('Access-Control-Allow-Origin', '*')
+    elif widget is None or not widget.allowed_domains or any(
+        _domain_matches(_domain_from_value(origin) or '', allowed_domain) for allowed_domain in widget.allowed_domains
+    ):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Vary'] = 'Origin'
+
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'authorization,content-type,x-widget-token'
+    response.headers['Access-Control-Max-Age'] = '600'
+
+
 def _domain_from_value(value: str | None) -> Optional[str]:
     if not value:
         return None
@@ -150,6 +221,8 @@ async def _get_public_widget(
     widget_token = _get_widget_token(request, token)
     if not widget_token or not widget_token.startswith('wgt_'):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.INVALID_TOKEN)
+    if len(widget_token) > 256:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.INVALID_TOKEN)
 
     widget = await ChatWidgets.get_widget_by_token(widget_token, db=db)
     if not widget or (widget_id and widget.id != widget_id):
@@ -189,7 +262,7 @@ def _messages_for_completion(widget: ChatWidgetModel, messages: list[ChatWidgetM
     if widget.system_prompt:
         completion_messages.append({'role': 'system', 'content': widget.system_prompt})
 
-    for message in messages:
+    for message in messages[-PUBLIC_WIDGET_HISTORY_LIMIT:]:
         if message.role not in {'user', 'assistant', 'system'}:
             continue
         content = _message_content_as_text(message.content)
@@ -348,11 +421,13 @@ async def get_widgets(
 @router.get('/public/config', response_model=PublicWidgetConfigResponse)
 async def get_public_widget_config(
     request: Request,
+    http_response: Response,
     token: Optional[str] = None,
     widget_id: Optional[str] = None,
     db: AsyncSession = Depends(get_async_session),
 ):
     widget, _ = await _get_public_widget(request, db, token=token, widget_id=widget_id)
+    _set_public_cors_headers(http_response, request, widget)
     return PublicWidgetConfigResponse(
         id=widget.id,
         name=widget.name,
@@ -360,14 +435,25 @@ async def get_public_widget_config(
     )
 
 
+@router.options('/public/{path:path}')
+async def public_widget_options(request: Request):
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _set_public_cors_headers(response, request)
+    return response
+
+
 @router.post('/public/chat', response_model=PublicWidgetChatResponse)
 async def create_public_widget_chat_message(
     request: Request,
+    http_response: Response,
     form_data: PublicWidgetChatForm,
     token: Optional[str] = None,
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget, _ = await _get_public_widget(request, db, token=token, widget_id=form_data.widget_id)
+    _ensure_public_request_size(request)
+    widget, owner = await _get_public_widget(request, db, token=token, widget_id=form_data.widget_id)
+    _ensure_public_rate_limit(request, widget, form_data.visitor_id or form_data.session_id)
+    _set_public_cors_headers(http_response, request, widget)
 
     session = None
     if form_data.session_id:
@@ -430,7 +516,9 @@ async def create_public_widget_chat_message(
         raise HTTPException(status_code=response.status_code, detail=ERROR_MESSAGES.DEFAULT())
 
     if isinstance(response, StreamingResponse):
-        return await _stream_widget_response(response, session.id, widget.id, widget.model_id, db)
+        stream_response = await _stream_widget_response(response, session.id, widget.id, widget.model_id, db)
+        _set_public_cors_headers(stream_response, request, widget)
+        return stream_response
 
     content, usage = _extract_response_content(response)
     assistant_message = await _save_assistant_message(

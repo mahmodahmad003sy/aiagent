@@ -312,6 +312,45 @@ class CORSStaticFiles(StaticFiles):
         return response
 
 
+class WidgetPublicCORSMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get('type') != 'http' or not scope.get('path', '').startswith('/api/v1/widgets/public'):
+            await self.app(scope, receive, send)
+            return
+
+        headers = {key.lower(): value for key, value in scope.get('headers', [])}
+        origin = headers.get(b'origin')
+        if not origin:
+            await self.app(scope, receive, send)
+            return
+
+        cors_headers = [
+            (b'access-control-allow-origin', origin),
+            (b'access-control-allow-methods', b'GET,POST,OPTIONS'),
+            (b'access-control-allow-headers', b'authorization,content-type,x-widget-token'),
+            (b'access-control-max-age', b'600'),
+            (b'vary', b'Origin'),
+        ]
+
+        if scope.get('method') == 'OPTIONS':
+            await send({'type': 'http.response.start', 'status': 204, 'headers': cors_headers})
+            await send({'type': 'http.response.body', 'body': b''})
+            return
+
+        async def send_with_cors(message):
+            if message.get('type') == 'http.response.start':
+                existing = {key.lower() for key, _ in message.get('headers', [])}
+                message['headers'] = list(message.get('headers', [])) + [
+                    header for header in cors_headers if header[0] not in existing
+                ]
+            await send(message)
+
+        await self.app(scope, receive, send_with_cors)
+
+
 if LOG_FORMAT != 'json':
     banner = rf"""
  ██████╗ ██████╗ ███████╗███╗   ██╗    ██╗    ██╗███████╗██████╗ ██╗   ██╗██╗
@@ -813,6 +852,7 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+app.add_middleware(WidgetPublicCORSMiddleware)
 
 
 app.mount('/ws', socket_app)

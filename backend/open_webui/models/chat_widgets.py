@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 import time
 import uuid
+from urllib.parse import urlparse
 from typing import Any, Optional
 
 from open_webui.internal.db import Base, get_async_db_context
@@ -15,6 +16,46 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 def generate_widget_token() -> str:
     return f'wgt_{secrets.token_urlsafe(32)}'
+
+
+def normalize_allowed_domains(value: list[str] | None) -> list[str]:
+    domains = []
+    for domain in value or []:
+        candidate = domain.strip().lower()
+        if not candidate:
+            continue
+
+        parsed = urlparse(candidate if '://' in candidate else f'//{candidate}', scheme='https')
+        host = parsed.hostname or candidate.split('/', 1)[0].split(':', 1)[0]
+        normalized = (host or '').strip('.')
+
+        if normalized == '*':
+            return ['*']
+
+        if normalized.startswith('*.'):
+            suffix = normalized[2:]
+            if not _is_valid_domain(suffix):
+                raise ValueError(f'Invalid allowed domain: {domain}')
+        elif not _is_valid_domain(normalized):
+            raise ValueError(f'Invalid allowed domain: {domain}')
+
+        if normalized not in domains:
+            domains.append(normalized)
+
+    if len(domains) > 100:
+        raise ValueError('A widget can have at most 100 allowed domains')
+    return domains
+
+
+def _is_valid_domain(domain: str) -> bool:
+    if not domain or len(domain) > 253:
+        return False
+    if domain == 'localhost':
+        return True
+    labels = domain.split('.')
+    if any(not label or len(label) > 63 for label in labels):
+        return False
+    return all(label.replace('-', '').isalnum() and not label.startswith('-') and not label.endswith('-') for label in labels)
 
 
 class ChatWidget(Base):
@@ -136,12 +177,7 @@ class ChatWidgetForm(BaseModel):
     @field_validator('allowed_domains')
     @classmethod
     def normalize_allowed_domains(cls, value: list[str]) -> list[str]:
-        domains = []
-        for domain in value or []:
-            normalized = domain.strip().lower()
-            if normalized and normalized not in domains:
-                domains.append(normalized)
-        return domains
+        return normalize_allowed_domains(value)
 
 
 class ChatWidgetUpdateForm(BaseModel):
@@ -158,12 +194,7 @@ class ChatWidgetUpdateForm(BaseModel):
     def normalize_allowed_domains(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         if value is None:
             return None
-        domains = []
-        for domain in value:
-            normalized = domain.strip().lower()
-            if normalized and normalized not in domains:
-                domains.append(normalized)
-        return domains
+        return normalize_allowed_domains(value)
 
 
 class ChatWidgetSessionForm(BaseModel):
