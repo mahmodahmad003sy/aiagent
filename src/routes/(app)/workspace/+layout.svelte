@@ -18,6 +18,7 @@
 	import { getPromptItems } from '$lib/apis/prompts';
 	import { getSkillItems } from '$lib/apis/skills';
 	import { getToolList } from '$lib/apis/tools';
+	import { getChatWidgets } from '$lib/apis/widgets';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
 	import SplitCreateButton from '$lib/components/common/SplitCreateButton.svelte';
@@ -54,7 +55,7 @@
 			$config?.features?.enable_plugins &&
 			($user?.role === 'admin' || $user?.permissions?.workspace?.tools);
 
-		const [modelRes, knowledgeRes, promptRes, skillRes, toolRes] = await Promise.all([
+		const [modelRes, knowledgeRes, promptRes, skillRes, toolRes, widgetRes] = await Promise.all([
 			canViewModels
 				? getModelItems(localStorage.token, null, null, null, null, null, 1).catch(() => null)
 				: null,
@@ -65,7 +66,8 @@
 				? getPromptItems(localStorage.token, null, null, null, null, null, 1).catch(() => null)
 				: null,
 			canViewSkills ? getSkillItems(localStorage.token, null, null, 1).catch(() => null) : null,
-			canViewTools ? getToolList(localStorage.token).catch(() => null) : null
+			canViewTools ? getToolList(localStorage.token).catch(() => null) : null,
+			getChatWidgets(localStorage.token).catch(() => null)
 		]);
 
 		workspaceCounts.set({
@@ -73,7 +75,8 @@
 			knowledge: getCount(knowledgeRes),
 			prompts: getCount(promptRes),
 			skills: getCount(skillRes),
-			tools: getCount(toolRes)
+			tools: getCount(toolRes),
+			widgets: getCount(widgetRes)
 		});
 	};
 
@@ -232,6 +235,21 @@
 								</span>
 							</a>
 						{/if}
+
+						<a
+							draggable="false"
+							aria-current={activeWorkspaceSection === 'widgets' ? 'page' : null}
+							class="min-w-fit px-1 text-sm inline-flex items-center gap-1 {activeWorkspaceSection ===
+							'widgets'
+								? 'text-gray-900 dark:text-gray-100'
+								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+							href="/workspace/widgets"
+						>
+							<span>{$i18n.t('Chat Widgets')}</span>
+							<span class="text-sm opacity-60">
+								{formatCount($workspaceCounts.widgets)}
+							</span>
+						</a>
 					</div>
 
 					<div class="ml-auto flex shrink-0 items-center gap-1">

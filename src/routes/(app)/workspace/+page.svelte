@@ -16,7 +16,7 @@
 			} else if ($user?.permissions?.workspace?.skills) {
 				goto('/workspace/skills', { replaceState: true });
 			} else {
-				goto('/', { replaceState: true });
+				goto('/workspace/widgets', { replaceState: true });
 			}
 		} else {
 			goto('/workspace/models', { replaceState: true });
