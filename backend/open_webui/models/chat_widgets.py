@@ -352,6 +352,45 @@ class ChatWidgetSessionTable:
             session = result.scalars().first()
             return ChatWidgetSessionModel.model_validate(session) if session else None
 
+    async def get_sessions_by_widget_id(
+        self,
+        widget_id: str,
+        skip: int = 0,
+        limit: int = 50,
+        db: Optional[AsyncSession] = None,
+    ) -> list[ChatWidgetSessionModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(
+                select(ChatWidgetSession)
+                .filter_by(widget_id=widget_id)
+                .order_by(ChatWidgetSession.last_activity_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            return [ChatWidgetSessionModel.model_validate(session) for session in result.scalars().all()]
+
+    async def delete_session_by_id_and_widget_id(
+        self,
+        id: str,
+        widget_id: str,
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        async with get_async_db_context(db) as db:
+            await db.execute(
+                delete(ChatWidgetMessage).where(
+                    ChatWidgetMessage.session_id == id,
+                    ChatWidgetMessage.widget_id == widget_id,
+                )
+            )
+            result = await db.execute(
+                delete(ChatWidgetSession).where(
+                    ChatWidgetSession.id == id,
+                    ChatWidgetSession.widget_id == widget_id,
+                )
+            )
+            await db.commit()
+            return result.rowcount > 0
+
 
 class ChatWidgetMessageTable:
     async def insert_new_message(
@@ -391,6 +430,20 @@ class ChatWidgetMessageTable:
             result = await db.execute(
                 select(ChatWidgetMessage)
                 .filter_by(session_id=session_id)
+                .order_by(ChatWidgetMessage.created_at.asc())
+            )
+            return [ChatWidgetMessageModel.model_validate(message) for message in result.scalars().all()]
+
+    async def get_messages_by_session_id_and_widget_id(
+        self,
+        session_id: str,
+        widget_id: str,
+        db: Optional[AsyncSession] = None,
+    ) -> list[ChatWidgetMessageModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(
+                select(ChatWidgetMessage)
+                .filter_by(session_id=session_id, widget_id=widget_id)
                 .order_by(ChatWidgetMessage.created_at.asc())
             )
             return [ChatWidgetMessageModel.model_validate(message) for message in result.scalars().all()]

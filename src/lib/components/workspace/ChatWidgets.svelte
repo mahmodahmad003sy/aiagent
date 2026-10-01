@@ -10,11 +10,16 @@
 	import {
 		createChatWidget,
 		deleteChatWidget,
+		deleteChatWidgetSession,
+		getChatWidgetSessionMessages,
+		getChatWidgetSessions,
 		getChatWidgets,
 		rotateChatWidgetToken,
 		updateChatWidget,
 		type ChatWidget,
-		type ChatWidgetForm
+		type ChatWidgetForm,
+		type ChatWidgetMessage,
+		type ChatWidgetSession
 	} from '$lib/apis/widgets';
 	import { copyToClipboard } from '$lib/utils';
 
@@ -36,6 +41,13 @@
 	let selectedWidget: ChatWidget | null = null;
 	let deleteTarget: ChatWidget | null = null;
 	let showDeleteConfirm = false;
+	let conversations: ChatWidgetSession[] = [];
+	let conversationMessages: ChatWidgetMessage[] = [];
+	let selectedConversation: ChatWidgetSession | null = null;
+	let conversationDeleteTarget: ChatWidgetSession | null = null;
+	let showConversationDeleteConfirm = false;
+	let conversationsLoading = false;
+	let messagesLoading = false;
 
 	let form: ChatWidgetForm = {
 		name: '',
@@ -56,6 +68,10 @@
 
 	const resetForm = () => {
 		selectedWidget = null;
+		conversations = [];
+		conversationMessages = [];
+		selectedConversation = null;
+		conversationDeleteTarget = null;
 		form = {
 			name: '',
 			model_id: $models?.[0]?.id ?? '',
@@ -69,6 +85,8 @@
 
 	const editWidget = (widget: ChatWidget) => {
 		selectedWidget = widget;
+		selectedConversation = null;
+		conversationMessages = [];
 		form = {
 			name: widget.name,
 			model_id: widget.model_id,
@@ -78,6 +96,7 @@
 			allowed_domains: widget.allowed_domains ?? []
 		};
 		domainsText = (widget.allowed_domains ?? []).join('\n');
+		loadConversations(widget);
 	};
 
 	const normalizeDomains = () =>
@@ -185,6 +204,100 @@
 		}
 	};
 
+	const loadConversations = async (widget = selectedWidget) => {
+		if (!widget) return;
+
+		const widgetId = widget.id;
+		conversationsLoading = true;
+		const res = await getChatWidgetSessions(localStorage.token, widgetId).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		conversationsLoading = false;
+
+		if (res && selectedWidget?.id === widgetId) {
+			conversations = res;
+			if (selectedConversation && !res.some((session) => session.id === selectedConversation?.id)) {
+				selectedConversation = null;
+				conversationMessages = [];
+			}
+		}
+	};
+
+	const openConversation = async (session: ChatWidgetSession) => {
+		if (!selectedWidget) return;
+
+		const widgetId = selectedWidget.id;
+		selectedConversation = session;
+		conversationMessages = [];
+		messagesLoading = true;
+		const res = await getChatWidgetSessionMessages(localStorage.token, widgetId, session.id).catch(
+			(error) => {
+				toast.error(`${error}`);
+				return null;
+			}
+		);
+		messagesLoading = false;
+
+		if (res && selectedWidget?.id === widgetId && selectedConversation?.id === session.id) {
+			conversationMessages = res;
+		}
+	};
+
+	const confirmConversationDelete = (session: ChatWidgetSession) => {
+		conversationDeleteTarget = session;
+		showConversationDeleteConfirm = true;
+	};
+
+	const deleteSelectedConversation = async () => {
+		if (!selectedWidget || !conversationDeleteTarget) return;
+
+		const deletedSessionId = conversationDeleteTarget.id;
+		const res = await deleteChatWidgetSession(
+			localStorage.token,
+			selectedWidget.id,
+			deletedSessionId
+		).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (res) {
+			toast.success($i18n.t('Deleted'));
+			conversations = conversations.filter((session) => session.id !== deletedSessionId);
+			if (selectedConversation?.id === deletedSessionId) {
+				selectedConversation = null;
+				conversationMessages = [];
+			}
+			conversationDeleteTarget = null;
+		}
+	};
+
+	const contentToText = (content: unknown): string => {
+		if (typeof content === 'string') return content;
+		if (Array.isArray(content)) {
+			return content
+				.map((item) => {
+					if (typeof item === 'string') return item;
+					if (item && typeof item === 'object') {
+						const value = item as Record<string, unknown>;
+						return typeof value.text === 'string'
+							? value.text
+							: typeof value.content === 'string'
+								? value.content
+								: '';
+					}
+					return '';
+				})
+				.filter(Boolean)
+				.join('');
+		}
+		if (content && typeof content === 'object') return JSON.stringify(content, null, 2);
+		return '';
+	};
+
+	const shortId = (id: string) => (id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id);
+
 	const baseUrl = () => (typeof window !== 'undefined' ? window.location.origin : '');
 	const buildEmbedCode = (widget: ChatWidget) =>
 		`<script src="${baseUrl()}/static/widget/chat-widget.js" data-widget-id="${widget.id}" data-token="${widget.token}" data-api-base="${baseUrl()}"><\/script>`;
@@ -215,6 +328,13 @@
 	title={$i18n.t('Delete widget?')}
 	message={$i18n.t('This will disable the embed and remove its widget configuration.')}
 	on:confirm={deleteSelectedWidget}
+/>
+
+<ConfirmDialog
+	bind:show={showConversationDeleteConfirm}
+	title={$i18n.t('Delete conversation?')}
+	message={$i18n.t('This will remove the widget conversation history.')}
+	on:confirm={deleteSelectedConversation}
 />
 
 {#if loaded}
@@ -451,6 +571,156 @@
 				</div>
 			</section>
 		</div>
+
+		{#if selectedWidget}
+			<section class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850">
+				<div
+					class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-850"
+				>
+					<div>
+						<div class="text-sm font-medium">{$i18n.t('Conversations')}</div>
+						<div class="text-xs text-gray-500">
+							{conversations.length} {$i18n.t('sessions')}
+						</div>
+					</div>
+					<Tooltip content={$i18n.t('Refresh')}>
+						<button
+							class="rounded-lg p-1.5 hover:bg-gray-100 dark:hover:bg-gray-850"
+							aria-label={$i18n.t('Refresh')}
+							on:click={() => loadConversations()}
+						>
+							{#if conversationsLoading}
+								<Spinner className="size-4" />
+							{:else}
+								<ArrowPath className="size-4" />
+							{/if}
+						</button>
+					</Tooltip>
+				</div>
+
+				<div class="grid grid-cols-1 lg:grid-cols-[minmax(280px,420px)_1fr]">
+					<div class="min-h-72 border-b border-gray-100 p-3 dark:border-gray-850 lg:border-b-0 lg:border-r">
+						{#if conversationsLoading && conversations.length === 0}
+							<div class="flex h-48 items-center justify-center">
+								<Spinner />
+							</div>
+						{:else if conversations.length === 0}
+							<div
+								class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 text-center dark:border-gray-800"
+							>
+								<ChatBubble className="size-6 text-gray-400" />
+								<div class="mt-2 text-sm font-medium">{$i18n.t('No conversations yet')}</div>
+							</div>
+						{:else}
+							<div class="flex max-h-[32rem] flex-col gap-1 overflow-auto pr-1">
+								{#each conversations as session (session.id)}
+									<div
+										class="group flex gap-2 rounded-lg border px-3 py-2 transition {selectedConversation?.id ===
+										session.id
+											? 'border-gray-400 bg-gray-50 dark:border-gray-600 dark:bg-gray-900'
+											: 'border-gray-100 hover:bg-gray-50 dark:border-gray-850 dark:hover:bg-gray-900'}"
+									>
+										<button class="min-w-0 flex-1 text-left" on:click={() => openConversation(session)}>
+											<div class="flex items-start justify-between gap-2">
+												<div class="min-w-0">
+													<div class="truncate text-sm font-medium">
+														{session.title || shortId(session.id)}
+													</div>
+													<div class="mt-0.5 truncate font-mono text-[11px] text-gray-500">
+														{session.id}
+													</div>
+												</div>
+												<div class="shrink-0 text-xs text-gray-500">
+													{session.message_count}
+												</div>
+											</div>
+											<div class="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-500 sm:grid-cols-2">
+												<div class="truncate">
+													{$i18n.t('Created')} {dayjs.unix(session.created_at).format('MMM D, HH:mm')}
+												</div>
+												<div class="truncate sm:text-right">
+													{$i18n.t('Active')} {dayjs.unix(session.last_activity_at).fromNow()}
+												</div>
+												<div class="truncate sm:col-span-2">
+													{$i18n.t('Model')}: {session.model_id || selectedWidget.model_id}
+												</div>
+											</div>
+										</button>
+										<Tooltip content={$i18n.t('Delete')}>
+											<button
+												class="h-8 w-8 shrink-0 rounded-lg p-1.5 text-gray-400 opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 lg:opacity-0 lg:group-hover:opacity-100"
+												aria-label={$i18n.t('Delete')}
+												on:click={() => confirmConversationDelete(session)}
+											>
+												<GarbageBin className="size-4" />
+											</button>
+										</Tooltip>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<div class="min-h-72 p-3">
+						{#if selectedConversation}
+							<div class="mb-3 flex flex-wrap items-start justify-between gap-2">
+								<div class="min-w-0">
+									<div class="truncate text-sm font-medium">
+										{selectedConversation.title || shortId(selectedConversation.id)}
+									</div>
+									<div class="truncate font-mono text-xs text-gray-500">
+										{selectedConversation.id}
+									</div>
+								</div>
+								<div class="text-xs text-gray-500">
+									{selectedConversation.message_count} {$i18n.t('messages')}
+								</div>
+							</div>
+
+							{#if messagesLoading}
+								<div class="flex h-48 items-center justify-center">
+									<Spinner />
+								</div>
+							{:else}
+								<div class="flex max-h-[32rem] flex-col gap-3 overflow-auto rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
+									{#each conversationMessages as message (message.id)}
+										<div
+											class="flex {message.role === 'user'
+												? 'justify-end'
+												: 'justify-start'}"
+										>
+											<div
+												class="max-w-[82%] rounded-xl border px-3 py-2 text-sm leading-relaxed {message.role ===
+												'user'
+													? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
+													: message.error
+														? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100'
+														: 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100'}"
+											>
+												<div class="mb-1 flex items-center justify-between gap-3 text-[11px] opacity-70">
+													<span class="capitalize">{message.role}</span>
+													<span>{dayjs.unix(message.created_at).format('MMM D, HH:mm')}</span>
+												</div>
+												<div class="whitespace-pre-wrap break-words">
+													{contentToText(message.content)}
+												</div>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						{:else}
+							<div
+								class="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 text-center dark:border-gray-800"
+							>
+								<ChatBubble className="size-6 text-gray-400" />
+								<div class="mt-2 text-sm font-medium">{$i18n.t('Select a conversation')}</div>
+							</div>
+						{/if}
+					</div>
+				</div>
+			</section>
+		{/if}
 	</div>
 {:else}
 	<div class="flex h-full items-center justify-center">

@@ -14,6 +14,7 @@ from open_webui.models.chat_widgets import (
     ChatWidgetForm,
     ChatWidgetModel,
     ChatWidgetSessionForm,
+    ChatWidgetSessionModel,
     ChatWidgetSessions,
     ChatWidgets,
     ChatWidgetUpdateForm,
@@ -539,6 +540,62 @@ async def create_public_widget_chat_message(
         assistant_message_id=assistant_message.id,
         content=content,
     )
+
+
+@router.get('/{widget_id}/sessions', response_model=list[ChatWidgetSessionModel])
+async def get_widget_sessions(
+    widget_id: str,
+    skip: int = 0,
+    limit: int = 50,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    if not widget:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    return await ChatWidgetSessions.get_sessions_by_widget_id(
+        widget.id,
+        skip=max(skip, 0),
+        limit=min(max(limit, 1), 100),
+        db=db,
+    )
+
+
+@router.get('/{widget_id}/sessions/{session_id}/messages', response_model=list[ChatWidgetMessageModel])
+async def get_widget_session_messages(
+    widget_id: str,
+    session_id: str,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    if not widget:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    session = await ChatWidgetSessions.get_session_by_id_and_widget_id(session_id, widget.id, db=db)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    return await ChatWidgetMessages.get_messages_by_session_id_and_widget_id(session.id, widget.id, db=db)
+
+
+@router.delete('/{widget_id}/sessions/{session_id}', response_model=bool)
+async def delete_widget_session(
+    widget_id: str,
+    session_id: str,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    if not widget:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    deleted = await ChatWidgetSessions.delete_session_by_id_and_widget_id(session_id, widget.id, db=db)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    return True
 
 
 @router.get('/{widget_id}', response_model=ChatWidgetModel)
