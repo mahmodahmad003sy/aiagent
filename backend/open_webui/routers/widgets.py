@@ -340,6 +340,7 @@ async def _stream_widget_response(
     session_id: str,
     widget_id: str,
     model_id: str,
+    message_id: str,
     db: AsyncSession,
 ):
     content_parts: list[str] = []
@@ -370,6 +371,7 @@ async def _stream_widget_response(
                         error = data.get('error')
 
         try:
+            yield f'data: {JSONCodec.dumps({"widget": {"session_id": session_id, "message_id": message_id}})}\n\n'
             async for chunk in response.body_iterator:
                 text = chunk.decode('utf-8') if isinstance(chunk, bytes) else str(chunk)
                 buffer += text
@@ -516,7 +518,7 @@ async def create_public_widget_chat_message(
         raise HTTPException(status_code=response.status_code, detail=ERROR_MESSAGES.DEFAULT())
 
     if isinstance(response, StreamingResponse):
-        stream_response = await _stream_widget_response(response, session.id, widget.id, widget.model_id, db)
+        stream_response = await _stream_widget_response(response, session.id, widget.id, widget.model_id, message.id, db)
         _set_public_cors_headers(stream_response, request, widget)
         return stream_response
 
