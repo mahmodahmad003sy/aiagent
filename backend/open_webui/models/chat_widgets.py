@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import secrets
+import re
 import time
 import uuid
 from urllib.parse import urlparse
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from open_webui.internal.db import Base, get_async_db_context
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -58,6 +59,104 @@ def _is_valid_domain(domain: str) -> bool:
     return all(label.replace('-', '').isalnum() and not label.startswith('-') and not label.endswith('-') for label in labels)
 
 
+HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+AVATAR_DATA_URL_RE = re.compile(r'^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$')
+AVATAR_MAX_LENGTH = 150_000
+MCP_TOOL_ID_PREFIX = 'server:mcp:'
+MAX_MCP_TOOL_IDS = 20
+
+
+class ChatWidgetTheme(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    primary_color: str = '#111827'
+    primary_text_color: str = '#ffffff'
+    header_background_color: str = '#ffffff'
+    header_text_color: str = '#111827'
+    background_color: str = '#fafafa'
+    assistant_bubble_color: str = '#ffffff'
+    assistant_text_color: str = '#111827'
+    user_bubble_color: str = '#111827'
+    user_text_color: str = '#ffffff'
+
+    font_family: Literal['system', 'arial', 'verdana', 'tahoma', 'trebuchet', 'georgia', 'times', 'courier'] = 'system'
+    font_size: int = Field(default=14, ge=12, le=20)
+
+    panel_radius: int = Field(default=12, ge=0, le=24)
+    bubble_radius: int = Field(default=12, ge=0, le=24)
+    panel_width: int = Field(default=390, ge=300, le=480)
+    panel_height: int = Field(default=640, ge=400, le=760)
+
+    launcher_shape: Literal['circle', 'rounded', 'square'] = 'circle'
+    launcher_size: int = Field(default=58, ge=44, le=72)
+    launcher_icon: Literal['chat', 'avatar'] = 'chat'
+
+    position: Literal['right', 'left'] = 'right'
+    offset_x: int = Field(default=20, ge=0, le=120)
+    offset_y: int = Field(default=20, ge=0, le=120)
+
+    avatar_url: Optional[str] = None
+    header_title: Optional[str] = Field(default=None, max_length=60)
+    header_subtitle: Optional[str] = Field(default=None, max_length=80)
+    input_placeholder: str = Field(default='Type a message', min_length=1, max_length=120)
+    show_status: bool = True
+
+    @field_validator(
+        'primary_color',
+        'primary_text_color',
+        'header_background_color',
+        'header_text_color',
+        'background_color',
+        'assistant_bubble_color',
+        'assistant_text_color',
+        'user_bubble_color',
+        'user_text_color',
+    )
+    @classmethod
+    def validate_color(cls, value: str) -> str:
+        if not HEX_COLOR_RE.match(value or ''):
+            raise ValueError('Colors must be in #RRGGBB format')
+        return value.lower()
+
+    @field_validator('avatar_url')
+    @classmethod
+    def validate_avatar(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == '':
+            return None
+        if len(value) > AVATAR_MAX_LENGTH or not AVATAR_DATA_URL_RE.match(value):
+            raise ValueError('Avatar must be a PNG, JPEG, WEBP or GIF image under 150 KB')
+        return value
+
+    @field_validator('header_title', 'header_subtitle')
+    @classmethod
+    def blank_to_none(cls, value: Optional[str]) -> Optional[str]:
+        value = (value or '').strip()
+        return value or None
+
+    @field_validator('input_placeholder')
+    @classmethod
+    def strip_placeholder(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError('Placeholder cannot be empty')
+        return value
+
+
+def normalize_mcp_tool_ids(value: list[str] | None) -> list[str]:
+    ids = []
+    for tool_id in value or []:
+        tool_id = (tool_id or '').strip()
+        if not tool_id:
+            continue
+        if not tool_id.startswith(MCP_TOOL_ID_PREFIX):
+            raise ValueError(f'Invalid MCP tool id: {tool_id}')
+        if tool_id not in ids:
+            ids.append(tool_id)
+    if len(ids) > MAX_MCP_TOOL_IDS:
+        raise ValueError(f'A widget can use at most {MAX_MCP_TOOL_IDS} MCP servers')
+    return ids
+
+
 class ChatWidget(Base):
     __tablename__ = 'chat_widget'
 
@@ -70,6 +169,10 @@ class ChatWidget(Base):
     token = Column(Text, nullable=False, unique=True, index=True)
     enabled = Column(Boolean, nullable=False, default=True, index=True)
     allowed_domains = Column(JSON, nullable=True)
+    theme = Column(JSON, nullable=True)
+    mcp_enabled = Column(Boolean, nullable=False, default=False)
+    mcp_tool_ids = Column(JSON, nullable=True)
+    folder_id = Column(Text, nullable=True)
     created_at = Column(BigInteger, nullable=False, index=True)
     updated_at = Column(BigInteger, nullable=False, index=True)
 
@@ -88,6 +191,8 @@ class ChatWidgetSession(Base):
     title = Column(Text, nullable=True)
     model_id = Column(Text, nullable=True, index=True)
     message_count = Column(BigInteger, nullable=False, default=0)
+    chat_id = Column(Text, nullable=True, index=True)
+    chat_last_message_id = Column(Text, nullable=True)
     created_at = Column(BigInteger, nullable=False, index=True)
     updated_at = Column(BigInteger, nullable=False, index=True)
     last_activity_at = Column(BigInteger, nullable=False, index=True)
@@ -131,8 +236,22 @@ class ChatWidgetModel(BaseModel):
     token: str
     enabled: bool = True
     allowed_domains: Optional[list[str]] = None
+    theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
+    mcp_enabled: bool = False
+    mcp_tool_ids: list[str] = Field(default_factory=list)
+    folder_id: Optional[str] = None
     created_at: int
     updated_at: int
+
+    @field_validator('theme', mode='before')
+    @classmethod
+    def default_theme(cls, value):
+        return value or {}
+
+    @field_validator('mcp_tool_ids', mode='before')
+    @classmethod
+    def default_mcp_tool_ids(cls, value):
+        return value or []
 
 
 class ChatWidgetSessionModel(BaseModel):
@@ -144,6 +263,8 @@ class ChatWidgetSessionModel(BaseModel):
     title: Optional[str] = None
     model_id: Optional[str] = None
     message_count: int = 0
+    chat_id: Optional[str] = None
+    chat_last_message_id: Optional[str] = None
     created_at: int
     updated_at: int
     last_activity_at: int
@@ -172,12 +293,20 @@ class ChatWidgetForm(BaseModel):
     welcome_message: Optional[str] = None
     enabled: bool = True
     allowed_domains: list[str] = Field(default_factory=list)
+    theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
+    mcp_enabled: bool = False
+    mcp_tool_ids: list[str] = Field(default_factory=list)
     model_config = ConfigDict(extra='forbid')
 
     @field_validator('allowed_domains')
     @classmethod
     def normalize_allowed_domains(cls, value: list[str]) -> list[str]:
         return normalize_allowed_domains(value)
+
+    @field_validator('mcp_tool_ids')
+    @classmethod
+    def normalize_mcp_tool_ids(cls, value: list[str]) -> list[str]:
+        return normalize_mcp_tool_ids(value)
 
 
 class ChatWidgetUpdateForm(BaseModel):
@@ -187,6 +316,9 @@ class ChatWidgetUpdateForm(BaseModel):
     welcome_message: Optional[str] = None
     enabled: Optional[bool] = None
     allowed_domains: Optional[list[str]] = None
+    theme: Optional[ChatWidgetTheme] = None
+    mcp_enabled: Optional[bool] = None
+    mcp_tool_ids: Optional[list[str]] = None
     model_config = ConfigDict(extra='forbid')
 
     @field_validator('allowed_domains')
@@ -195,6 +327,13 @@ class ChatWidgetUpdateForm(BaseModel):
         if value is None:
             return None
         return normalize_allowed_domains(value)
+
+    @field_validator('mcp_tool_ids')
+    @classmethod
+    def normalize_mcp_tool_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        if value is None:
+            return None
+        return normalize_mcp_tool_ids(value)
 
 
 class ChatWidgetSessionForm(BaseModel):
@@ -313,6 +452,13 @@ class ChatWidgetTable:
             await db.commit()
             return result.rowcount > 0
 
+    async def set_folder_id(self, id: str, folder_id: Optional[str], db: Optional[AsyncSession] = None) -> None:
+        async with get_async_db_context(db) as db:
+            widget = await db.get(ChatWidget, id)
+            if widget:
+                widget.folder_id = folder_id
+                await db.commit()
+
 
 class ChatWidgetSessionTable:
     async def insert_new_session(
@@ -368,6 +514,23 @@ class ChatWidgetSessionTable:
                 .limit(limit)
             )
             return [ChatWidgetSessionModel.model_validate(session) for session in result.scalars().all()]
+
+    async def update_chat_link(
+        self,
+        id: str,
+        chat_id: Optional[str] = None,
+        chat_last_message_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> None:
+        async with get_async_db_context(db) as db:
+            session = await db.get(ChatWidgetSession, id)
+            if not session:
+                return
+            if chat_id is not None:
+                session.chat_id = chat_id
+            if chat_last_message_id is not None:
+                session.chat_last_message_id = chat_last_message_id
+            await db.commit()
 
     async def delete_session_by_id_and_widget_id(
         self,

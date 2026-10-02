@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import time
+from datetime import timedelta
 from typing import Optional
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -8,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.chat_widgets import (
+    ChatWidgetTheme,
     ChatWidgetMessageForm,
     ChatWidgetMessageModel,
     ChatWidgetMessages,
@@ -18,14 +22,21 @@ from open_webui.models.chat_widgets import (
     ChatWidgetSessions,
     ChatWidgets,
     ChatWidgetUpdateForm,
+    MCP_TOOL_ID_PREFIX,
 )
+from open_webui.models.chats import ChatForm, Chats
+from open_webui.models.folders import FolderForm, Folders
 from open_webui.models.users import Users
-from open_webui.utils.auth import get_verified_user
-from open_webui.utils.chat import generate_chat_completion
+from open_webui.utils.auth import create_token, get_verified_user
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.models import get_all_models, get_filtered_models
 from open_webui.utils.rate_limit import RateLimiter
 from open_webui.utils.redis import get_redis_client
+from open_webui.utils.widget_stream import (
+    WIDGET_ERROR_MESSAGE,
+    register_widget_turn,
+    unregister_widget_turn,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
@@ -34,10 +45,12 @@ router = APIRouter()
 
 PUBLIC_WIDGET_CHAT_MESSAGE_LIMIT = 20_000
 PUBLIC_WIDGET_REQUEST_BODY_LIMIT = 64 * 1024
-PUBLIC_WIDGET_HISTORY_LIMIT = 40
 PUBLIC_WIDGET_CHAT_RATE_LIMIT = 60
 PUBLIC_WIDGET_VISITOR_RATE_LIMIT = 20
 PUBLIC_WIDGET_RATE_LIMIT_WINDOW = 60
+PUBLIC_WIDGET_STREAM_KEEPALIVE = 15
+WIDGET_OWNER_TOKEN_TTL = timedelta(minutes=15)
+WIDGET_FOLDER_PREFIX = 'Widget: '
 
 public_widget_chat_rate_limiter = RateLimiter(
     redis_client=get_redis_client(),
@@ -57,6 +70,7 @@ class PublicWidgetConfigResponse(BaseModel):
     id: str
     name: str
     welcome_message: Optional[str] = None
+    theme: ChatWidgetTheme
 
 
 class PublicWidgetChatForm(BaseModel):
@@ -103,6 +117,21 @@ async def _ensure_model_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
+
+
+async def _ensure_mcp_tool_access(request: Request, tool_ids: list[str], user, db: AsyncSession) -> None:
+    if not tool_ids:
+        return
+    from open_webui.routers.tools import get_tools as list_user_tools
+
+    available = {
+        tool.id
+        for tool in await list_user_tools(request, query=None, user=user, db=db)
+        if tool.id.startswith(MCP_TOOL_ID_PREFIX)
+    }
+    missing = [tool_id for tool_id in tool_ids if tool_id not in available]
+    if missing:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f'MCP server not available: {missing[0]}')
 
 
 def _get_widget_token(request: Request, token: Optional[str] = None) -> Optional[str]:
@@ -258,58 +287,97 @@ def _message_content_as_text(content) -> str:
     return '' if content is None else str(content)
 
 
-def _messages_for_completion(widget: ChatWidgetModel, messages: list[ChatWidgetMessageModel]) -> list[dict]:
-    completion_messages = []
-    if widget.system_prompt:
-        completion_messages.append({'role': 'system', 'content': widget.system_prompt})
+async def _ensure_widget_folder(widget: ChatWidgetModel) -> str:
+    if widget.folder_id and await Folders.get_folder_by_id_and_user_id(widget.folder_id, widget.user_id):
+        return widget.folder_id
 
-    for message in messages[-PUBLIC_WIDGET_HISTORY_LIMIT:]:
-        if message.role not in {'user', 'assistant', 'system'}:
+    name = f'{WIDGET_FOLDER_PREFIX}{widget.name}'[:100]
+    folder = await Folders.get_folder_by_parent_id_and_user_id_and_name(None, widget.user_id, name)
+    if not folder:
+        folder = await Folders.insert_new_folder(widget.user_id, FolderForm(name=name), None)
+    await ChatWidgets.set_folder_id(widget.id, folder.id)
+    return folder.id
+
+
+def _chat_title(text: str) -> str:
+    title = ' '.join((text or '').split())
+    return (title[:57] + '...') if len(title) > 60 else (title or 'Widget chat')
+
+
+async def _ensure_session_chat(
+    widget: ChatWidgetModel,
+    session: ChatWidgetSessionModel,
+    first_message: str,
+) -> tuple[str, Optional[str]]:
+    """Return (chat_id, parent_message_id) for the next user message."""
+    if session.chat_id and await Chats.get_chat_by_id_and_user_id(session.chat_id, widget.user_id):
+        return session.chat_id, session.chat_last_message_id
+
+    folder_id = await _ensure_widget_folder(widget)
+
+    # Backfill sessions created before V2 or sessions whose owner chat was deleted.
+    existing = await ChatWidgetMessages.get_messages_by_session_id_and_widget_id(session.id, widget.id)
+    history: dict[str, dict] = {}
+    flat: list[dict] = []
+    last_id: Optional[str] = None
+    first_user_text = None
+    for message in existing:
+        if message.role not in {'user', 'assistant'}:
             continue
         content = _message_content_as_text(message.content)
-        if content:
-            completion_messages.append({'role': message.role, 'content': content})
+        if message.role == 'user' and first_user_text is None:
+            first_user_text = content
+        message_id = str(uuid4())
+        history[message_id] = {
+            'id': message_id,
+            'parentId': last_id,
+            'childrenIds': [],
+            'role': message.role,
+            'content': content,
+            'timestamp': message.created_at,
+            **(
+                {'model': widget.model_id, 'done': True}
+                if message.role == 'assistant'
+                else {'models': [widget.model_id]}
+            ),
+        }
+        if last_id:
+            history[last_id]['childrenIds'].append(message_id)
+        flat.append({'role': message.role, 'content': content})
+        last_id = message_id
 
-    return completion_messages
+    chat_id = str(uuid4())
+    await Chats.insert_new_chat(
+        chat_id,
+        widget.user_id,
+        ChatForm(
+            folder_id=folder_id,
+            chat={
+                'id': chat_id,
+                'title': _chat_title(first_user_text or first_message),
+                'models': [widget.model_id],
+                'history': {'currentId': last_id, 'messages': history},
+                'messages': flat,
+                'tags': [],
+                'timestamp': int(time.time() * 1000),
+                'meta': {
+                    'widget_id': widget.id,
+                    'widget_session_id': session.id,
+                    'visitor_id': session.visitor_id,
+                },
+            },
+        ),
+    )
+    await ChatWidgetSessions.update_chat_link(session.id, chat_id=chat_id, chat_last_message_id=last_id)
 
+    from open_webui.socket.main import sio
 
-def _extract_response_content(response) -> tuple[str, dict | None]:
-    if not isinstance(response, dict):
-        return str(response or ''), None
-
-    choices = response.get('choices') or []
-    if choices and isinstance(choices[0], dict):
-        message = choices[0].get('message') or {}
-        content = message.get('content')
-        if isinstance(content, str):
-            return content, response.get('usage')
-        if isinstance(content, list):
-            return _message_content_as_text(content), response.get('usage')
-
-        text = choices[0].get('text')
-        if isinstance(text, str):
-            return text, response.get('usage')
-
-    content = response.get('content')
-    if isinstance(content, str):
-        return content, response.get('usage')
-
-    return '', response.get('usage')
-
-
-def _extract_stream_delta(data: dict) -> str:
-    choices = data.get('choices') or []
-    if not choices or not isinstance(choices[0], dict):
-        return ''
-
-    delta = choices[0].get('delta') or {}
-    content = delta.get('content')
-    if isinstance(content, str):
-        return content
-
-    message = choices[0].get('message') or {}
-    content = message.get('content')
-    return content if isinstance(content, str) else ''
+    await sio.emit(
+        'events',
+        {'chat_id': chat_id, 'message_id': None, 'data': {'type': 'chat:list'}},
+        room=f'user:{widget.user_id}',
+    )
+    return chat_id, last_id
 
 
 async def _save_assistant_message(
@@ -336,72 +404,6 @@ async def _save_assistant_message(
     )
 
 
-async def _stream_widget_response(
-    response: StreamingResponse,
-    session_id: str,
-    widget_id: str,
-    model_id: str,
-    message_id: str,
-    db: AsyncSession,
-):
-    content_parts: list[str] = []
-    usage = None
-    error = None
-
-    async def iterator():
-        nonlocal usage, error
-        buffer = ''
-
-        def process_event(event: str) -> None:
-            nonlocal usage, error
-            for line in event.splitlines():
-                line = line.strip()
-                if not line.startswith('data:'):
-                    continue
-                payload = line[5:].strip()
-                if not payload or payload == '[DONE]':
-                    continue
-                try:
-                    data = JSONCodec.loads(payload)
-                except Exception:
-                    continue
-                if isinstance(data, dict):
-                    content_parts.append(_extract_stream_delta(data))
-                    usage = data.get('usage') or usage
-                    if data.get('error'):
-                        error = data.get('error')
-
-        try:
-            yield f'data: {JSONCodec.dumps({"widget": {"session_id": session_id, "message_id": message_id}})}\n\n'
-            async for chunk in response.body_iterator:
-                text = chunk.decode('utf-8') if isinstance(chunk, bytes) else str(chunk)
-                buffer += text
-                while '\n\n' in buffer:
-                    event, buffer = buffer.split('\n\n', 1)
-                    process_event(event)
-                yield chunk
-        finally:
-            if buffer.strip():
-                process_event(buffer)
-            content = ''.join(content_parts)
-            await _save_assistant_message(
-                session_id,
-                widget_id,
-                model_id,
-                content,
-                usage=usage,
-                error=error,
-                db=db,
-            )
-
-    return StreamingResponse(
-        iterator(),
-        media_type='text/event-stream',
-        status_code=response.status_code,
-        background=response.background,
-    )
-
-
 @router.post('', response_model=ChatWidgetModel)
 async def create_widget(
     request: Request,
@@ -410,6 +412,9 @@ async def create_widget(
     db: AsyncSession = Depends(get_async_session),
 ):
     await _ensure_model_access(request, form_data.model_id, user, db)
+    if form_data.mcp_enabled and not form_data.mcp_tool_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Select at least one MCP server')
+    await _ensure_mcp_tool_access(request, form_data.mcp_tool_ids, user, db)
     return await ChatWidgets.insert_new_widget(user.id, form_data, db=db)
 
 
@@ -435,6 +440,7 @@ async def get_public_widget_config(
         id=widget.id,
         name=widget.name,
         welcome_message=widget.welcome_message,
+        theme=widget.theme,
     )
 
 
@@ -472,6 +478,8 @@ async def create_public_widget_chat_message(
             db=db,
         )
 
+    chat_id, parent_message_id = await _ensure_session_chat(widget, session, form_data.message)
+
     message = await ChatWidgetMessages.insert_new_message(
         session.id,
         widget.id,
@@ -483,62 +491,95 @@ async def create_public_widget_chat_message(
         db=db,
     )
 
-    history = await ChatWidgetMessages.get_messages_by_session_id(session.id, db=db)
+    user_message_id = str(uuid4())
+    assistant_message_id = str(uuid4())
+
+    messages = []
+    if widget.system_prompt:
+        messages.append({'role': 'system', 'content': widget.system_prompt})
+    messages.append({'role': 'user', 'content': form_data.message})
+
     form_payload = {
         'model': widget.model_id,
-        'messages': _messages_for_completion(widget, history),
-        'stream': form_data.stream,
-        'metadata': {
-            'widget_id': widget.id,
-            'widget_session_id': session.id,
-            'user_id': owner.id,
+        'messages': messages,
+        'stream': True,
+        'chat_id': chat_id,
+        'id': assistant_message_id,
+        'user_message': {
+            'id': user_message_id,
+            'parentId': parent_message_id,
+            'childrenIds': [],
+            'role': 'user',
+            'content': form_data.message,
+            'timestamp': int(time.time()),
+            'models': [widget.model_id],
         },
+        'params': {'tool_approval_mode': 'full'},
+        'features': {},
     }
+    if widget.mcp_enabled and widget.mcp_tool_ids:
+        form_payload['tool_ids'] = list(widget.mcp_tool_ids)
 
-    try:
-        response = await generate_chat_completion(
-            request,
-            form_payload,
-            owner,
-            bypass_system_prompt=True,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        await _save_assistant_message(
-            session.id,
-            widget.id,
-            widget.model_id,
-            '',
-            error={'content': str(exc)},
-            db=db,
-        )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    request.state.token = create_token(
+        data={'id': owner.id, 'typ': 'widget'},
+        expires_delta=WIDGET_OWNER_TOKEN_TTL,
+    )
 
-    if isinstance(response, Response) and not isinstance(response, StreamingResponse) and response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=ERROR_MESSAGES.DEFAULT())
+    turn = register_widget_turn(assistant_message_id)
+    widget_id, session_id, model_id = widget.id, session.id, widget.model_id
 
-    if isinstance(response, StreamingResponse):
-        stream_response = await _stream_widget_response(response, session.id, widget.id, widget.model_id, message.id, db)
+    async def run_turn():
+        try:
+            await request.app.state.CHAT_COMPLETION_HANDLER(request, form_payload, user=owner)
+        except HTTPException as exc:
+            turn.handle_event({'type': 'chat:message:error', 'data': {'error': {'content': str(exc.detail)}}})
+        except Exception as exc:
+            turn.handle_event({'type': 'chat:message:error', 'data': {'error': {'content': str(exc)}}})
+        finally:
+            try:
+                await _save_assistant_message(
+                    session_id,
+                    widget_id,
+                    model_id,
+                    turn.content,
+                    usage=turn.usage,
+                    error={'content': turn.error} if turn.error else None,
+                    db=None,
+                )
+                await ChatWidgetSessions.update_chat_link(session_id, chat_last_message_id=assistant_message_id)
+            finally:
+                unregister_widget_turn(assistant_message_id)
+                turn.queue.put_nowait(None)
+
+    task = asyncio.create_task(run_turn())
+
+    if form_data.stream:
+        async def event_stream():
+            yield f'data: {JSONCodec.dumps({"widget": {"session_id": session_id, "message_id": message.id}})}\n\n'
+            while True:
+                try:
+                    item = await asyncio.wait_for(turn.queue.get(), timeout=PUBLIC_WIDGET_STREAM_KEEPALIVE)
+                except asyncio.TimeoutError:
+                    yield ': ping\n\n'
+                    continue
+                if item is None:
+                    break
+                yield f'data: {JSONCodec.dumps(item)}\n\n'
+            yield 'data: [DONE]\n\n'
+
+        stream_response = StreamingResponse(event_stream(), media_type='text/event-stream')
+        stream_response.headers['Cache-Control'] = 'no-cache'
+        stream_response.headers['X-Accel-Buffering'] = 'no'
         _set_public_cors_headers(stream_response, request, widget)
         return stream_response
 
-    content, usage = _extract_response_content(response)
-    assistant_message = await _save_assistant_message(
-        session.id,
-        widget.id,
-        widget.model_id,
-        content,
-        usage=usage,
-        db=db,
-    )
-
+    await task
     return PublicWidgetChatResponse(
         widget_id=widget.id,
         session_id=session.id,
         message_id=message.id,
-        assistant_message_id=assistant_message.id,
-        content=content,
+        assistant_message_id=None,
+        content=turn.content if not turn.error else WIDGET_ERROR_MESSAGE,
     )
 
 
@@ -591,6 +632,13 @@ async def delete_widget_session(
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
+    session = await ChatWidgetSessions.get_session_by_id_and_widget_id(session_id, widget.id, db=db)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    if session.chat_id:
+        await Chats.delete_chat_by_id_and_user_id(session.chat_id, widget.user_id)
+
     deleted = await ChatWidgetSessions.delete_session_by_id_and_widget_id(session_id, widget.id, db=db)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
@@ -620,6 +668,16 @@ async def update_widget_by_id(
 ):
     if form_data.model_id is not None:
         await _ensure_model_access(request, form_data.model_id, user, db)
+
+    existing = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+    effective_enabled = form_data.mcp_enabled if form_data.mcp_enabled is not None else existing.mcp_enabled
+    effective_ids = form_data.mcp_tool_ids if form_data.mcp_tool_ids is not None else existing.mcp_tool_ids
+    if effective_enabled and not effective_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Select at least one MCP server')
+    if form_data.mcp_tool_ids is not None:
+        await _ensure_mcp_tool_access(request, form_data.mcp_tool_ids, user, db)
 
     widget = await ChatWidgets.update_widget_by_id_and_user_id(widget_id, user.id, form_data, db=db)
     if not widget:

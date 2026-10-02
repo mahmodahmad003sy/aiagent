@@ -8,6 +8,7 @@
 
 	import { models, workspaceActions, workspaceCounts } from '$lib/stores';
 	import {
+		DEFAULT_WIDGET_THEME,
 		createChatWidget,
 		deleteChatWidget,
 		deleteChatWidgetSession,
@@ -19,14 +20,17 @@
 		type ChatWidget,
 		type ChatWidgetForm,
 		type ChatWidgetMessage,
-		type ChatWidgetSession
+		type ChatWidgetSession,
+		type ChatWidgetTheme
 	} from '$lib/apis/widgets';
+	import { getTools } from '$lib/apis/tools';
 	import { copyToClipboard } from '$lib/utils';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import ChatWidgetPreview from '$lib/components/workspace/ChatWidgetPreview.svelte';
 	import Clipboard from '$lib/components/icons/Clipboard.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import ArrowPath from '$lib/components/icons/ArrowPath.svelte';
@@ -48,6 +52,8 @@
 	let showConversationDeleteConfirm = false;
 	let conversationsLoading = false;
 	let messagesLoading = false;
+	let mcpServers: { id: string; name: string; description: string; authenticated?: boolean }[] = [];
+	let avatarInputElement: HTMLInputElement;
 
 	let form: ChatWidgetForm = {
 		name: '',
@@ -55,16 +61,56 @@
 		system_prompt: '',
 		welcome_message: '',
 		enabled: true,
-		allowed_domains: []
+		allowed_domains: [],
+		mcp_enabled: false,
+		mcp_tool_ids: [],
+		theme: structuredClone(DEFAULT_WIDGET_THEME)
 	};
 	let domainsText = '';
 
 	$: embedCode = selectedWidget ? buildEmbedCode(selectedWidget) : '';
 	$: selectedModelName =
 		$models?.find((model) => model.id === form.model_id)?.name ?? form.model_id ?? '';
+	$: unavailableMcpToolIds = form.mcp_tool_ids.filter(
+		(toolId) => !mcpServers.some((server) => server.id === toolId)
+	);
 	$: if (!form.model_id && $models?.length) {
 		form = { ...form, model_id: $models[0].id };
 	}
+
+	type ThemeColorField =
+		| 'primary_color'
+		| 'primary_text_color'
+		| 'header_background_color'
+		| 'header_text_color'
+		| 'background_color'
+		| 'assistant_bubble_color'
+		| 'assistant_text_color'
+		| 'user_bubble_color'
+		| 'user_text_color';
+
+	const colorFields: { label: string; key: ThemeColorField }[] = [
+		{ label: 'Primary', key: 'primary_color' },
+		{ label: 'Text on primary', key: 'primary_text_color' },
+		{ label: 'Header background', key: 'header_background_color' },
+		{ label: 'Header text', key: 'header_text_color' },
+		{ label: 'Chat background', key: 'background_color' },
+		{ label: 'Assistant bubble', key: 'assistant_bubble_color' },
+		{ label: 'Assistant text', key: 'assistant_text_color' },
+		{ label: 'User bubble', key: 'user_bubble_color' },
+		{ label: 'User text', key: 'user_text_color' }
+	];
+
+	const fontOptions: { label: string; value: ChatWidgetTheme['font_family'] }[] = [
+		{ label: 'System', value: 'system' },
+		{ label: 'Arial', value: 'arial' },
+		{ label: 'Verdana', value: 'verdana' },
+		{ label: 'Tahoma', value: 'tahoma' },
+		{ label: 'Trebuchet', value: 'trebuchet' },
+		{ label: 'Georgia', value: 'georgia' },
+		{ label: 'Times New Roman', value: 'times' },
+		{ label: 'Courier', value: 'courier' }
+	];
 
 	const resetForm = () => {
 		selectedWidget = null;
@@ -78,7 +124,10 @@
 			system_prompt: '',
 			welcome_message: '',
 			enabled: true,
-			allowed_domains: []
+			allowed_domains: [],
+			mcp_enabled: false,
+			mcp_tool_ids: [],
+			theme: structuredClone(DEFAULT_WIDGET_THEME)
 		};
 		domainsText = '';
 	};
@@ -93,7 +142,10 @@
 			system_prompt: widget.system_prompt ?? '',
 			welcome_message: widget.welcome_message ?? '',
 			enabled: widget.enabled,
-			allowed_domains: widget.allowed_domains ?? []
+			allowed_domains: widget.allowed_domains ?? [],
+			mcp_enabled: widget.mcp_enabled,
+			mcp_tool_ids: [...(widget.mcp_tool_ids ?? [])],
+			theme: { ...DEFAULT_WIDGET_THEME, ...(widget.theme ?? {}) }
 		};
 		domainsText = (widget.allowed_domains ?? []).join('\n');
 		loadConversations(widget);
@@ -110,8 +162,106 @@
 		name: form.name.trim(),
 		system_prompt: form.system_prompt?.trim() || null,
 		welcome_message: form.welcome_message?.trim() || null,
-		allowed_domains: normalizeDomains()
+		allowed_domains: normalizeDomains(),
+		mcp_tool_ids: form.mcp_enabled ? form.mcp_tool_ids : [],
+		theme: {
+			...form.theme,
+			header_title: form.theme.header_title?.trim() || null,
+			header_subtitle: form.theme.header_subtitle?.trim() || null,
+			input_placeholder: form.theme.input_placeholder?.trim() || 'Type a message'
+		}
 	});
+
+	const updateTheme = (updates: Partial<ChatWidgetTheme>) => {
+		form = { ...form, theme: { ...form.theme, ...updates } };
+	};
+
+	const toggleMcpTool = (toolId: string) => {
+		form = {
+			...form,
+			mcp_tool_ids: form.mcp_tool_ids.includes(toolId)
+				? form.mcp_tool_ids.filter((id) => id !== toolId)
+				: [...form.mcp_tool_ids, toolId]
+		};
+	};
+
+	const removeMcpTool = (toolId: string) => {
+		form = { ...form, mcp_tool_ids: form.mcp_tool_ids.filter((id) => id !== toolId) };
+	};
+
+	const normalizeColorField = (key: ThemeColorField) => {
+		const value = form.theme[key];
+		updateTheme({
+			[key]: /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : DEFAULT_WIDGET_THEME[key]
+		});
+	};
+
+	const resetColors = () => {
+		form = {
+			...form,
+			theme: {
+				...form.theme,
+				...Object.fromEntries(colorFields.map(({ key }) => [key, DEFAULT_WIDGET_THEME[key]]))
+			}
+		};
+	};
+
+	const resetAppearance = () => {
+		form = { ...form, theme: structuredClone(DEFAULT_WIDGET_THEME) };
+	};
+
+	const uploadAvatar = (event: Event) => {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		if (file.size > 5 * 1024 * 1024) {
+			toast.error($i18n.t('Image is too large'));
+			input.value = '';
+			return;
+		}
+
+		const reader = new FileReader();
+		reader.onload = (readerEvent) => {
+			const originalImageUrl = `${readerEvent.target?.result}`;
+			const img = new Image();
+			img.src = originalImageUrl;
+
+			img.onload = () => {
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				if (!ctx) return;
+
+				const size = 128;
+				const aspectRatio = img.width / img.height;
+				let newWidth;
+				let newHeight;
+				if (aspectRatio > 1) {
+					newWidth = size * aspectRatio;
+					newHeight = size;
+				} else {
+					newWidth = size;
+					newHeight = size / aspectRatio;
+				}
+
+				canvas.width = size;
+				canvas.height = size;
+				ctx.drawImage(img, (size - newWidth) / 2, (size - newHeight) / 2, newWidth, newHeight);
+
+				let avatar = canvas.toDataURL('image/webp', 0.85);
+				if (avatar.length > 150000) {
+					avatar = canvas.toDataURL('image/webp', 0.6);
+				}
+				if (avatar.length > 150000) {
+					toast.error($i18n.t('Image is too large'));
+				} else {
+					updateTheme({ avatar_url: avatar });
+				}
+				input.value = '';
+			};
+		};
+		reader.readAsDataURL(file);
+	};
 
 	const loadWidgets = async () => {
 		const res = await getChatWidgets(localStorage.token).catch((error) => {
@@ -137,6 +287,10 @@
 		}
 		if (!payload.model_id) {
 			toast.error($i18n.t('Model is required'));
+			return;
+		}
+		if (form.mcp_enabled && form.mcp_tool_ids.length === 0) {
+			toast.error($i18n.t('Select at least one MCP server'));
 			return;
 		}
 
@@ -318,6 +472,15 @@
 			}
 		]);
 		resetForm();
+		const tools = await getTools(localStorage.token).catch(() => []);
+		mcpServers = (tools ?? [])
+			.filter((tool) => tool.id.startsWith('server:mcp:'))
+			.map((tool) => ({
+				id: tool.id,
+				name: tool.name,
+				description: tool.meta?.description ?? '',
+				authenticated: tool.authenticated
+			}));
 		await loadWidgets();
 		loaded = true;
 	});
@@ -333,7 +496,7 @@
 <ConfirmDialog
 	bind:show={showConversationDeleteConfirm}
 	title={$i18n.t('Delete conversation?')}
-	message={$i18n.t('This will remove the widget conversation history.')}
+	message={$i18n.t('This will remove the widget conversation and its chat in your chat history.')}
 	on:confirm={deleteSelectedConversation}
 />
 
@@ -384,7 +547,8 @@
 											{widget.model_id}
 										</div>
 										<div class="mt-1 text-xs text-gray-400">
-											{$i18n.t('Updated')} {dayjs.unix(widget.updated_at).fromNow()}
+											{$i18n.t('Updated')}
+											{dayjs.unix(widget.updated_at).fromNow()}
 										</div>
 									</div>
 									<div class="shrink-0 text-xs text-gray-500">
@@ -486,11 +650,15 @@
 					</div>
 
 					<div class="space-y-3">
-						<div class="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-gray-850">
+						<div
+							class="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-gray-850"
+						>
 							<div>
 								<div class="text-sm font-medium">{$i18n.t('Enabled')}</div>
 								<div class="text-xs text-gray-500">
-									{form.enabled ? $i18n.t('Public embed accepts chat') : $i18n.t('Public embed is paused')}
+									{form.enabled
+										? $i18n.t('Public embed accepts chat')
+										: $i18n.t('Public embed is paused')}
 								</div>
 							</div>
 							<Switch bind:state={form.enabled} ariaLabel={$i18n.t('Enabled')} />
@@ -506,6 +674,75 @@
 								placeholder={'example.com\n*.example.com'}
 							></textarea>
 						</label>
+
+						<div class="rounded-lg border border-gray-100 p-3 dark:border-gray-850">
+							<div class="flex items-center justify-between gap-3">
+								<div>
+									<div class="text-sm font-medium">{$i18n.t('MCP tools')}</div>
+									<div class="text-xs text-gray-500">
+										{form.mcp_enabled
+											? $i18n.t('Let this widget call MCP servers')
+											: $i18n.t('Tools are off')}
+									</div>
+								</div>
+								<Switch bind:state={form.mcp_enabled} ariaLabel={$i18n.t('MCP tools')} />
+							</div>
+
+							{#if form.mcp_enabled}
+								<div class="mt-3 space-y-2">
+									{#if mcpServers.length === 0}
+										<div class="text-xs text-gray-500">
+											{$i18n.t(
+												'No MCP servers available. Ask an admin to add one in Settings > External Tools.'
+											)}
+										</div>
+									{:else}
+										{#each mcpServers as server (server.id)}
+											<label
+												class="flex items-start gap-2 rounded-lg border border-gray-100 px-2.5 py-2 dark:border-gray-850"
+											>
+												<input
+													type="checkbox"
+													class="mt-1"
+													checked={form.mcp_tool_ids.includes(server.id)}
+													disabled={server.authenticated === false}
+													on:change={() => toggleMcpTool(server.id)}
+												/>
+												<div class="min-w-0 flex-1">
+													<div class="truncate text-sm font-medium">{server.name}</div>
+													{#if server.description}
+														<div class="truncate text-xs text-gray-500">{server.description}</div>
+													{/if}
+													{#if server.authenticated === false}
+														<div class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+															{$i18n.t('Sign in to this server from a normal chat first')}
+														</div>
+													{/if}
+												</div>
+											</label>
+										{/each}
+									{/if}
+
+									{#each unavailableMcpToolIds as toolId (toolId)}
+										<div
+											class="flex items-center justify-between gap-2 rounded-lg border border-amber-200 px-2.5 py-2 dark:border-amber-900"
+										>
+											<div class="min-w-0">
+												<div class="text-sm font-medium">{$i18n.t('Unavailable')}</div>
+												<div class="truncate font-mono text-xs text-gray-500">{toolId}</div>
+											</div>
+											<button
+												type="button"
+												class="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
+												on:click={() => removeMcpTool(toolId)}
+											>
+												{$i18n.t('Remove')}
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
 
 						{#if selectedWidget}
 							<div>
@@ -541,6 +778,355 @@
 								/>
 							</div>
 						{/if}
+					</div>
+				</div>
+
+				<div class="border-t border-gray-100 p-4 dark:border-gray-850">
+					<div class="mb-3 text-sm font-medium">{$i18n.t('Appearance')}</div>
+					<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+						<div class="space-y-4">
+							<div>
+								<div class="mb-2 text-xs font-medium uppercase text-gray-500">
+									{$i18n.t('Avatar')}
+								</div>
+								<div class="flex items-center gap-3">
+									<div
+										class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-100 dark:border-gray-850"
+										style={`background: ${form.theme.primary_color}; color: ${form.theme.primary_text_color};`}
+									>
+										{#if form.theme.avatar_url}
+											<img src={form.theme.avatar_url} alt="" class="h-full w-full object-cover" />
+										{:else}
+											<ChatBubble className="size-5" />
+										{/if}
+									</div>
+									<div class="flex flex-wrap items-center gap-2">
+										<input
+											bind:this={avatarInputElement}
+											type="file"
+											hidden
+											accept="image/png,image/jpeg,image/webp,image/gif"
+											on:change={uploadAvatar}
+										/>
+										<button
+											type="button"
+											class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+											on:click={() => avatarInputElement?.click()}
+										>
+											{$i18n.t('Upload')}
+										</button>
+										{#if form.theme.avatar_url}
+											<button
+												type="button"
+												class="rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:text-red-600"
+												on:click={() => updateTheme({ avatar_url: null, launcher_icon: 'chat' })}
+											>
+												{$i18n.t('Remove')}
+											</button>
+										{/if}
+									</div>
+								</div>
+								<label class="mt-3 block">
+									<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+										{$i18n.t('Launcher icon')}
+									</div>
+									<select
+										class="w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 disabled:opacity-50 dark:border-gray-800"
+										bind:value={form.theme.launcher_icon}
+										disabled={!form.theme.avatar_url}
+									>
+										<option value="chat">{$i18n.t('Chat icon')}</option>
+										<option value="avatar">{$i18n.t('Avatar')}</option>
+									</select>
+								</label>
+							</div>
+
+							<div>
+								<div class="mb-2 flex items-center justify-between gap-2">
+									<div class="text-xs font-medium uppercase text-gray-500">{$i18n.t('Colors')}</div>
+									<button
+										type="button"
+										class="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
+										on:click={resetColors}
+									>
+										{$i18n.t('Reset colors')}
+									</button>
+								</div>
+								<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+									{#each colorFields as field (field.key)}
+										<label class="block">
+											<div class="mb-1 text-xs text-gray-500">{$i18n.t(field.label)}</div>
+											<div class="flex items-center gap-2">
+												<input
+													type="color"
+													class="h-9 w-11 shrink-0 rounded border border-gray-200 bg-transparent p-1 dark:border-gray-800"
+													bind:value={form.theme[field.key]}
+													on:blur={() => normalizeColorField(field.key)}
+												/>
+												<input
+													class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-transparent px-2 py-1.5 font-mono text-xs outline-none focus:border-gray-400 dark:border-gray-800"
+													bind:value={form.theme[field.key]}
+													on:blur={() => normalizeColorField(field.key)}
+												/>
+											</div>
+										</label>
+									{/each}
+								</div>
+							</div>
+
+							<div>
+								<div class="mb-2 text-xs font-medium uppercase text-gray-500">
+									{$i18n.t('Text')}
+								</div>
+								<div class="space-y-3">
+									<label class="block">
+										<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+											{$i18n.t('Font')}
+										</div>
+										<select
+											class="w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
+											bind:value={form.theme.font_family}
+										>
+											{#each fontOptions as option (option.value)}
+												<option value={option.value}>{option.label}</option>
+											{/each}
+										</select>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Font size')}</span>
+											<span>{form.theme.font_size}px</span>
+										</div>
+										<input
+											type="range"
+											min="12"
+											max="20"
+											step="1"
+											class="w-full"
+											bind:value={form.theme.font_size}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+											{$i18n.t('Header title')}
+										</div>
+										<input
+											class="w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
+											bind:value={form.theme.header_title}
+											maxlength="60"
+											placeholder={form.name}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+											{$i18n.t('Header subtitle')}
+										</div>
+										<input
+											class="w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
+											bind:value={form.theme.header_subtitle}
+											maxlength="80"
+											placeholder="Online"
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+											{$i18n.t('Input placeholder')}
+										</div>
+										<input
+											class="w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
+											bind:value={form.theme.input_placeholder}
+											maxlength="120"
+										/>
+									</label>
+
+									<div
+										class="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-gray-850"
+									>
+										<div class="text-sm font-medium">{$i18n.t('Show status')}</div>
+										<Switch
+											bind:state={form.theme.show_status}
+											ariaLabel={$i18n.t('Show status')}
+										/>
+									</div>
+								</div>
+							</div>
+
+							<div>
+								<div class="mb-2 text-xs font-medium uppercase text-gray-500">
+									{$i18n.t('Layout')}
+								</div>
+								<div class="space-y-3">
+									<div>
+										<div class="mb-1 text-xs text-gray-500">{$i18n.t('Position')}</div>
+										<div
+											class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-800"
+										>
+											{#each ['left', 'right'] as position}
+												<button
+													type="button"
+													class="rounded-md px-3 py-1.5 text-sm capitalize {form.theme.position ===
+													position
+														? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+														: 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-100'}"
+													on:click={() =>
+														updateTheme({ position: position as ChatWidgetTheme['position'] })}
+												>
+													{$i18n.t(position === 'left' ? 'Left' : 'Right')}
+												</button>
+											{/each}
+										</div>
+									</div>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Horizontal offset')}</span><span>{form.theme.offset_x}px</span
+											>
+										</div>
+										<input
+											type="range"
+											min="0"
+											max="120"
+											class="w-full"
+											bind:value={form.theme.offset_x}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Vertical offset')}</span><span>{form.theme.offset_y}px</span>
+										</div>
+										<input
+											type="range"
+											min="0"
+											max="120"
+											class="w-full"
+											bind:value={form.theme.offset_y}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Panel width')}</span><span>{form.theme.panel_width}px</span>
+										</div>
+										<input
+											type="range"
+											min="300"
+											max="480"
+											step="10"
+											class="w-full"
+											bind:value={form.theme.panel_width}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Panel height')}</span><span>{form.theme.panel_height}px</span>
+										</div>
+										<input
+											type="range"
+											min="400"
+											max="760"
+											step="10"
+											class="w-full"
+											bind:value={form.theme.panel_height}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Panel corner radius')}</span><span
+												>{form.theme.panel_radius}px</span
+											>
+										</div>
+										<input
+											type="range"
+											min="0"
+											max="24"
+											class="w-full"
+											bind:value={form.theme.panel_radius}
+										/>
+									</label>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Bubble corner radius')}</span><span
+												>{form.theme.bubble_radius}px</span
+											>
+										</div>
+										<input
+											type="range"
+											min="0"
+											max="24"
+											class="w-full"
+											bind:value={form.theme.bubble_radius}
+										/>
+									</label>
+
+									<div>
+										<div class="mb-1 text-xs text-gray-500">{$i18n.t('Launcher shape')}</div>
+										<div
+											class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-800"
+										>
+											{#each ['circle', 'rounded', 'square'] as shape}
+												<button
+													type="button"
+													class="rounded-md px-3 py-1.5 text-sm capitalize {form.theme
+														.launcher_shape === shape
+														? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+														: 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-100'}"
+													on:click={() =>
+														updateTheme({
+															launcher_shape: shape as ChatWidgetTheme['launcher_shape']
+														})}
+												>
+													{$i18n.t(
+														shape === 'circle'
+															? 'Circle'
+															: shape === 'rounded'
+																? 'Rounded'
+																: 'Square'
+													)}
+												</button>
+											{/each}
+										</div>
+									</div>
+
+									<label class="block">
+										<div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+											<span>{$i18n.t('Launcher size')}</span><span
+												>{form.theme.launcher_size}px</span
+											>
+										</div>
+										<input
+											type="range"
+											min="44"
+											max="72"
+											step="2"
+											class="w-full"
+											bind:value={form.theme.launcher_size}
+										/>
+									</label>
+								</div>
+							</div>
+
+							<button
+								type="button"
+								class="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-gray-100"
+								on:click={resetAppearance}
+							>
+								{$i18n.t('Reset appearance')}
+							</button>
+						</div>
+
+						<ChatWidgetPreview
+							theme={form.theme}
+							name={form.name}
+							welcomeMessage={form.welcome_message}
+						/>
 					</div>
 				</div>
 
@@ -580,7 +1166,8 @@
 					<div>
 						<div class="text-sm font-medium">{$i18n.t('Conversations')}</div>
 						<div class="text-xs text-gray-500">
-							{conversations.length} {$i18n.t('sessions')}
+							{conversations.length}
+							{$i18n.t('sessions')}
 						</div>
 					</div>
 					<Tooltip content={$i18n.t('Refresh')}>
@@ -599,7 +1186,9 @@
 				</div>
 
 				<div class="grid grid-cols-1 lg:grid-cols-[minmax(280px,420px)_1fr]">
-					<div class="min-h-72 border-b border-gray-100 p-3 dark:border-gray-850 lg:border-b-0 lg:border-r">
+					<div
+						class="min-h-72 border-b border-gray-100 p-3 dark:border-gray-850 lg:border-b-0 lg:border-r"
+					>
 						{#if conversationsLoading && conversations.length === 0}
 							<div class="flex h-48 items-center justify-center">
 								<Spinner />
@@ -620,7 +1209,10 @@
 											? 'border-gray-400 bg-gray-50 dark:border-gray-600 dark:bg-gray-900'
 											: 'border-gray-100 hover:bg-gray-50 dark:border-gray-850 dark:hover:bg-gray-900'}"
 									>
-										<button class="min-w-0 flex-1 text-left" on:click={() => openConversation(session)}>
+										<button
+											class="min-w-0 flex-1 text-left"
+											on:click={() => openConversation(session)}
+										>
 											<div class="flex items-start justify-between gap-2">
 												<div class="min-w-0">
 													<div class="truncate text-sm font-medium">
@@ -636,16 +1228,29 @@
 											</div>
 											<div class="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-500 sm:grid-cols-2">
 												<div class="truncate">
-													{$i18n.t('Created')} {dayjs.unix(session.created_at).format('MMM D, HH:mm')}
+													{$i18n.t('Created')}
+													{dayjs.unix(session.created_at).format('MMM D, HH:mm')}
 												</div>
 												<div class="truncate sm:text-right">
-													{$i18n.t('Active')} {dayjs.unix(session.last_activity_at).fromNow()}
+													{$i18n.t('Active')}
+													{dayjs.unix(session.last_activity_at).fromNow()}
 												</div>
 												<div class="truncate sm:col-span-2">
 													{$i18n.t('Model')}: {session.model_id || selectedWidget.model_id}
 												</div>
 											</div>
 										</button>
+										{#if session.chat_id}
+											<Tooltip content={$i18n.t('Open in chat')}>
+												<a
+													href={`/c/${session.chat_id}`}
+													class="h-8 w-8 shrink-0 rounded-lg p-1.5 text-gray-400 opacity-100 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-850 dark:hover:text-gray-100 lg:opacity-0 lg:group-hover:opacity-100"
+													aria-label={$i18n.t('Open in chat')}
+												>
+													<ChatBubble className="size-4" />
+												</a>
+											</Tooltip>
+										{/if}
 										<Tooltip content={$i18n.t('Delete')}>
 											<button
 												class="h-8 w-8 shrink-0 rounded-lg p-1.5 text-gray-400 opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 lg:opacity-0 lg:group-hover:opacity-100"
@@ -672,8 +1277,20 @@
 										{selectedConversation.id}
 									</div>
 								</div>
-								<div class="text-xs text-gray-500">
-									{selectedConversation.message_count} {$i18n.t('messages')}
+								<div class="flex shrink-0 items-center gap-3">
+									{#if selectedConversation.chat_id}
+										<a
+											href={`/c/${selectedConversation.chat_id}`}
+											class="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+										>
+											<ChatBubble className="size-3.5" />
+											{$i18n.t('Open in chat')}
+										</a>
+									{/if}
+									<div class="text-xs text-gray-500">
+										{selectedConversation.message_count}
+										{$i18n.t('messages')}
+									</div>
 								</div>
 							</div>
 
@@ -682,13 +1299,11 @@
 									<Spinner />
 								</div>
 							{:else}
-								<div class="flex max-h-[32rem] flex-col gap-3 overflow-auto rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
+								<div
+									class="flex max-h-[32rem] flex-col gap-3 overflow-auto rounded-lg bg-gray-50 p-3 dark:bg-gray-900"
+								>
 									{#each conversationMessages as message (message.id)}
-										<div
-											class="flex {message.role === 'user'
-												? 'justify-end'
-												: 'justify-start'}"
-										>
+										<div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
 											<div
 												class="max-w-[82%] rounded-xl border px-3 py-2 text-sm leading-relaxed {message.role ===
 												'user'
@@ -697,7 +1312,9 @@
 														? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100'
 														: 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100'}"
 											>
-												<div class="mb-1 flex items-center justify-between gap-3 text-[11px] opacity-70">
+												<div
+													class="mb-1 flex items-center justify-between gap-3 text-[11px] opacity-70"
+												>
 													<span class="capitalize">{message.role}</span>
 													<span>{dayjs.unix(message.created_at).format('MMM D, HH:mm')}</span>
 												</div>

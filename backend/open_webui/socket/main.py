@@ -48,6 +48,7 @@ from open_webui.utils.redis import (
     get_redis_connection,
     get_sentinels_from_env,
 )
+from open_webui.utils.widget_stream import publish_widget_event
 from socketio.packet import Packet
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
@@ -1063,6 +1064,7 @@ async def get_event_emitter(request_info, update_db=True):
         user_id = request_info['user_id']
         chat_id = request_info['chat_id']
         message_id = request_info['message_id']
+        publish_widget_event(message_id, event_data)
         internal = request_info.get('internal') is True
         save_to_chat = update_db and message_id and is_saved_chat_id(chat_id)
 
