@@ -93,6 +93,7 @@ export type ChatWidget = {
 	mcp_enabled: boolean;
 	mcp_tool_ids: string[];
 	folder_id?: string | null;
+	knowledge_id?: string | null;
 	created_at: number;
 	updated_at: number;
 };
