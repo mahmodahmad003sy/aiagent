@@ -51,6 +51,11 @@ PUBLIC_WIDGET_RATE_LIMIT_WINDOW = 60
 PUBLIC_WIDGET_STREAM_KEEPALIVE = 15
 WIDGET_OWNER_TOKEN_TTL = timedelta(minutes=15)
 WIDGET_FOLDER_PREFIX = 'Widget: '
+WIDGET_KNOWLEDGE_INSTRUCTION = (
+    'Use the provided website knowledge to answer. Some knowledge entries describe downloadable resources '
+    '(link only): you may tell the user the resource exists and share its URL and the page where it was found, '
+    'but never claim to know what is inside it.'
+)
 
 public_widget_chat_rate_limiter = RateLimiter(
     redis_client=get_redis_client(),
@@ -494,9 +499,13 @@ async def create_public_widget_chat_message(
     user_message_id = str(uuid4())
     assistant_message_id = str(uuid4())
 
+    system_prompt = widget.system_prompt or ''
+    if widget.knowledge_id:
+        system_prompt = f'{system_prompt}\n\n{WIDGET_KNOWLEDGE_INSTRUCTION}'.strip()
+
     messages = []
-    if widget.system_prompt:
-        messages.append({'role': 'system', 'content': widget.system_prompt})
+    if system_prompt:
+        messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': form_data.message})
 
     form_payload = {
@@ -519,6 +528,8 @@ async def create_public_widget_chat_message(
     }
     if widget.mcp_enabled and widget.mcp_tool_ids:
         form_payload['tool_ids'] = list(widget.mcp_tool_ids)
+    if widget.knowledge_id:
+        form_payload['files'] = [{'type': 'collection', 'id': widget.knowledge_id}]
 
     request.state.token = create_token(
         data={'id': owner.id, 'typ': 'widget'},
