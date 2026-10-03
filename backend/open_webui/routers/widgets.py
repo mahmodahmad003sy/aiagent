@@ -24,6 +24,11 @@ from open_webui.models.chat_widgets import (
     ChatWidgetUpdateForm,
     MCP_TOOL_ID_PREFIX,
 )
+from open_webui.models.chat_widget_crawl import (
+    ChatWidgetCrawlConfigs,
+    ChatWidgetCrawlRuns,
+    ChatWidgetKnowledgeItems,
+)
 from open_webui.models.chats import ChatForm, Chats
 from open_webui.models.folders import FolderForm, Folders
 from open_webui.models.users import Users
@@ -32,6 +37,8 @@ from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.models import get_all_models, get_filtered_models
 from open_webui.utils.rate_limit import RateLimiter
 from open_webui.utils.redis import get_redis_client
+from open_webui.utils.widget_crawl_jobs import request_cancel as request_widget_job_cancel
+from open_webui.utils.widget_knowledge_sync import delete_widget_knowledge
 from open_webui.utils.widget_stream import (
     WIDGET_ERROR_MESSAGE,
     register_widget_turn,
@@ -702,6 +709,17 @@ async def delete_widget_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
+    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    if not widget:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    request_widget_job_cancel(widget.id)
+    if widget.knowledge_id:
+        await delete_widget_knowledge(widget.id, widget.knowledge_id)
+    await ChatWidgetKnowledgeItems.delete_items_by_widget_id(widget.id, db=db)
+    await ChatWidgetCrawlRuns.delete_runs_by_widget_id(widget.id, db=db)
+    await ChatWidgetCrawlConfigs.delete_by_widget_id(widget.id, db=db)
+
     deleted = await ChatWidgets.delete_widget_by_id_and_user_id(widget_id, user.id, db=db)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
