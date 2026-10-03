@@ -31,6 +31,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ChatWidgetPreview from '$lib/components/workspace/ChatWidgetPreview.svelte';
+	import WidgetCrawl from '$lib/components/workspace/WidgetCrawl.svelte';
 	import Clipboard from '$lib/components/icons/Clipboard.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import ArrowPath from '$lib/components/icons/ArrowPath.svelte';
@@ -1159,6 +1160,12 @@
 				</div>
 			</section>
 		</div>
+
+		{#if selectedWidget}
+			{#key selectedWidget.id}
+				<WidgetCrawl widget={selectedWidget} />
+			{/key}
+		{/if}
 
 		{#if selectedWidget}
 			<section class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850">
