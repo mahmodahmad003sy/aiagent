@@ -174,6 +174,7 @@ from open_webui.routers import (
     tools,
     users,
     utils,
+    widget_crawl,
     widgets,
 )
 from open_webui.routers.retrieval import (
@@ -874,6 +875,7 @@ app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
 app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
 app.include_router(widgets.router, prefix='/api/v1/widgets', tags=['widgets'])
+app.include_router(widget_crawl.router, prefix='/api/v1/widgets', tags=['widgets'])
 
 
 app.include_router(channels.router, prefix='/api/v1/channels', tags=['channels'])
