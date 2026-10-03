@@ -467,7 +467,7 @@
 		workspaceActions.set([
 			{
 				id: 'widgets-new',
-				label: $i18n.t('Create'),
+				label: $i18n.t('New widget'),
 				onClick: resetForm
 			}
 		]);
@@ -509,10 +509,11 @@
 						{$i18n.t('Chat Widgets')}
 					</div>
 					<button
+						type="button"
 						class="px-3 py-1.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black"
 						on:click={resetForm}
 					>
-						{$i18n.t('Create')}
+						{$i18n.t('New widget')}
 					</button>
 				</div>
 
@@ -1144,6 +1145,7 @@
 						<div></div>
 					{/if}
 					<button
+						type="button"
 						class="inline-flex min-w-20 items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
 						disabled={saving}
 						on:click={saveWidget}
@@ -1151,7 +1153,7 @@
 						{#if saving}
 							<Spinner className="size-4" />
 						{:else}
-							{selectedWidget ? $i18n.t('Save') : $i18n.t('Create')}
+							{selectedWidget ? $i18n.t('Save') : $i18n.t('Create widget')}
 						{/if}
 					</button>
 				</div>

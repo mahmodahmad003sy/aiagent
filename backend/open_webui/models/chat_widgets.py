@@ -173,6 +173,7 @@ class ChatWidget(Base):
     mcp_enabled = Column(Boolean, nullable=False, default=False)
     mcp_tool_ids = Column(JSON, nullable=True)
     folder_id = Column(Text, nullable=True)
+    knowledge_id = Column(Text, nullable=True)
     created_at = Column(BigInteger, nullable=False, index=True)
     updated_at = Column(BigInteger, nullable=False, index=True)
 
@@ -240,6 +241,7 @@ class ChatWidgetModel(BaseModel):
     mcp_enabled: bool = False
     mcp_tool_ids: list[str] = Field(default_factory=list)
     folder_id: Optional[str] = None
+    knowledge_id: Optional[str] = None
     created_at: int
     updated_at: int
 
@@ -457,6 +459,15 @@ class ChatWidgetTable:
             widget = await db.get(ChatWidget, id)
             if widget:
                 widget.folder_id = folder_id
+                await db.commit()
+
+    async def set_knowledge_id(
+        self, id: str, knowledge_id: Optional[str], db: Optional[AsyncSession] = None
+    ) -> None:
+        async with get_async_db_context(db) as db:
+            widget = await db.get(ChatWidget, id)
+            if widget:
+                widget.knowledge_id = knowledge_id
                 await db.commit()
 
 
