@@ -12,6 +12,7 @@ from open_webui.env import FORWARD_SESSION_INFO_HEADER_CHAT_ID
 from open_webui.retrieval.web.main import SearchResult, get_filtered_results
 from open_webui.utils.headers import include_user_info_headers
 from open_webui.utils.json_codec import JSONCodec
+from open_webui.branding import BRAND_NAME
 
 log = logging.getLogger(__name__)
 
@@ -41,10 +42,7 @@ def search_yandex(
 ) -> List[SearchResult]:
     try:
         headers = {
-            # LICENSE covers this Open WebUI user-agent identifier.
-            # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-            # https://docs.openwebui.com/license.
-            'User-Agent': 'Open WebUI (https://github.com/open-webui/open-webui) RAG Bot',
+            'User-Agent': f'{BRAND_NAME} RAG Bot',
             'Authorization': f'Api-Key {yandex_search_api_key}',
         }
 

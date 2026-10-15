@@ -116,9 +116,6 @@ for file_path in (FRONTEND_BUILD_DIR / 'static').glob('**/*'):
         except Exception as e:
             logging.error(f'An error occurred: {e}')
 
-# LICENSE covers copied Open WebUI logo/favicon assets.
-# Do not alter, remove, obscure, or replace them except as LICENSE permits:
-# https://docs.openwebui.com/license.
 frontend_favicon = FRONTEND_BUILD_DIR / 'static' / 'favicon.png'
 
 if frontend_favicon.exists():
@@ -180,46 +177,6 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 CACHE_DIR = DATA_DIR / 'cache'
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-####################################
-# CUSTOM_NAME (Legacy)
-####################################
-
-# LICENSE covers this legacy Open WebUI branding path.
-# Do not alter, remove, obscure, or replace it except as LICENSE permits:
-# https://docs.openwebui.com/license.
-CUSTOM_NAME = os.getenv('CUSTOM_NAME', '')
-
-if CUSTOM_NAME:
-    try:
-        r = requests.get(f'https://api.openwebui.com/api/v1/custom/{CUSTOM_NAME}')
-        data = r.json()
-        if r.ok:
-            if 'logo' in data:
-                WEBUI_FAVICON_URL = url = (
-                    f'https://api.openwebui.com{data["logo"]}' if data['logo'][0] == '/' else data['logo']
-                )
-
-                r = requests.get(url, stream=True)
-                if r.status_code == 200:
-                    with open(f'{STATIC_DIR}/favicon.png', 'wb') as f:
-                        r.raw.decode_content = True
-                        shutil.copyfileobj(r.raw, f)
-
-            if 'splash' in data:
-                url = f'https://api.openwebui.com{data["splash"]}' if data['splash'][0] == '/' else data['splash']
-
-                r = requests.get(url, stream=True)
-                if r.status_code == 200:
-                    with open(f'{STATIC_DIR}/splash.png', 'wb') as f:
-                        r.raw.decode_content = True
-                        shutil.copyfileobj(r.raw, f)
-
-            WEBUI_NAME = data['name']
-    except Exception as e:
-        log.exception(e)
-        pass
 
 
 ####################################
@@ -2083,9 +2040,6 @@ DEFAULT_ARENA_MODEL = {
     'id': 'arena-model',
     'name': 'Arena Model',
     'meta': {
-        # LICENSE covers this Open WebUI fallback logo.
-        # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-        # https://docs.openwebui.com/license.
         'profile_image_url': '/favicon.png',
         'description': 'Submit your questions to anonymous AI chatbots and vote on the best response.',
         'model_ids': None,

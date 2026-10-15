@@ -9,6 +9,7 @@ import requests
 from langchain_core.documents import Document
 from open_webui.env import ENABLE_FORWARD_USER_INFO_HEADERS, GLOBAL_LOG_LEVEL
 from open_webui.utils.headers import include_user_info_headers
+from open_webui.branding import BRAND_NAME
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ class MistralLoader:
         # ENHANCEMENT: Added User-Agent for better API tracking and debugging
         self.headers = {
             'Authorization': f'Bearer {self.api_key}',
-            'User-Agent': 'OpenWebUI-MistralLoader/2.0',  # Helps API provider track usage
+            'User-Agent': f'{BRAND_NAME.replace(" ", "")}-MistralLoader/2.0',  # Helps API provider track usage
         }
         if self.user is not None and ENABLE_FORWARD_USER_INFO_HEADERS:
             self.headers = include_user_info_headers(self.headers, self.user)

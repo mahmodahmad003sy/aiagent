@@ -1,0 +1,27 @@
+{
+	"name": "SmartLilac AI Studio",
+	"short_name": "SmartLilac",
+	"description": "SmartLilac AI Studio is a private, self-hosted AI workspace.",
+	"copyright_holder": "SmartLilac",
+	"favicon_url": "",
+
+	"theme_color": "#ffffff",
+	"background_color": "#ffffff",
+
+	"links": {
+		"website": "",
+		"documentation": "",
+		"github": "",
+		"discord": "",
+		"x": ""
+	},
+
+	"images": {
+		"favicon": "assets/favicon.png",
+		"favicon_svg": "assets/favicon.svg",
+		"favicon_ico": "assets/favicon.ico",
+		"logo": "assets/logo.png",
+		"splash": "assets/splash.png",
+		"splash_dark": "assets/splash-dark.png"
+	}
+}

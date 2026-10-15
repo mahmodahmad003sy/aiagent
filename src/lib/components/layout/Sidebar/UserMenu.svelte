@@ -9,7 +9,7 @@
 
 	import { showSettings, mobile, showSidebar, user, config, settings } from '$lib/stores';
 
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { BRANDING, WEBUI_API_BASE_URL } from '$lib/constants';
 
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import DropdownMenu from '$lib/components/common/DropdownMenu.svelte';
@@ -463,9 +463,9 @@
 
 				<!-- {$i18n.t('Help')} -->
 
-				{#if $user?.role === 'admin'}
+				{#if $user?.role === 'admin' && BRANDING.links?.documentation}
 					<a
-						href="https://docs.openwebui.com"
+						href={BRANDING.links.documentation}
 						target="_blank"
 						draggable="false"
 						class="flex h-[1.6875rem] items-center gap-2 rounded-xl px-2 text-[0.8125rem] w-full hover:bg-gray-100 dark:hover:bg-gray-900 transition cursor-pointer select-none"

@@ -1,9 +1,3 @@
-# Open WebUI Branding Assets
+# Static assets
 
-This directory contains Open WebUI branding assets, including favicons, logos, splash images, app icons, and web app manifest icons.
-
-Open WebUI branding in this directory includes assets, filenames, metadata, manifests, references, and surrounding UI that present or preserve the Open WebUI name, logo, visual, textual, or symbolic identifiers.
-
-Do not alter, remove, obscure, or replace Open WebUI branding except as permitted by `LICENSE`.
-
-See also: https://docs.openwebui.com/license.
+Brand images in this directory are generated from `branding/` — edit `branding/branding.json` and `branding/assets/`, then run `npm run branding:apply`. See `branding/README.md`.

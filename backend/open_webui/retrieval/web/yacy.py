@@ -4,6 +4,7 @@ from typing import Optional
 import requests
 from open_webui.retrieval.web.main import SearchResult, get_filtered_results
 from requests.auth import HTTPDigestAuth
+from open_webui.branding import BRAND_NAME
 
 log = logging.getLogger(__name__)
 
@@ -59,10 +60,7 @@ def search_yacy(
         query_url,
         auth=yacy_auth,
         headers={
-            # LICENSE covers this Open WebUI user-agent identifier.
-            # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-            # https://docs.openwebui.com/license.
-            'User-Agent': 'Open WebUI (https://github.com/open-webui/open-webui) RAG Bot',
+            'User-Agent': f'{BRAND_NAME} RAG Bot',
             'Accept': 'text/html',
             'Accept-Encoding': 'gzip, deflate',
             'Accept-Language': 'en-US,en;q=0.5',

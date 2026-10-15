@@ -13,6 +13,7 @@ from open_webui.models.config import Config
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from open_webui.retrieval.web.utils import validate_url
 from open_webui.utils.webhook import post_webhook
+from open_webui.branding import BRAND_NAME
 
 log = logging.getLogger(__name__)
 
@@ -1032,10 +1033,7 @@ def build_event(
 
 
 async def dispatch_webhook_event(app: Any, event: Event) -> None:
-    # LICENSE covers this Open WebUI webhook identifier.
-    # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-    # https://docs.openwebui.com/license.
-    name = getattr(getattr(app, 'state', None), 'WEBUI_NAME', 'Open WebUI')
+    name = getattr(getattr(app, 'state', None), 'WEBUI_NAME', BRAND_NAME)
     subject = event.subject or {}
     subject_id = subject.get('id')
     definition = EVENT_DEFINITIONS_BY_NAME.get(event.event)

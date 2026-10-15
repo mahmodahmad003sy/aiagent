@@ -149,11 +149,8 @@
 						{$i18n.t('Connect to your own OpenAPI compatible external tool servers.')}
 					</div>
 					<div class={helpTextClass}>
-						<!-- LICENSE covers this Open WebUI wordmark.
-							Do not alter, remove, obscure, or replace it except as LICENSE permits:
-							https://docs.openwebui.com/license. -->
 						{$i18n.t(
-							'CORS must be properly configured by the provider to allow requests from Open WebUI.'
+							'CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.'
 						)}
 						<a
 							class="ml-1 text-gray-500 underline hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"

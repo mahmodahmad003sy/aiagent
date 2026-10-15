@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { APP_NAME, WEBUI_BASE_URL } from '$lib/constants';
 
 	import { getModels } from '$lib/apis';
 	import { getSummary, getDailyStats, getTokenUsage } from '$lib/apis/analytics';
@@ -124,7 +124,7 @@
 
 			return {
 				id: 'open-webui',
-				name: 'Open WebUI',
+				name: APP_NAME,
 				type: 'Backend',
 				status: data?.status === true ? 'online' : 'offline',
 				latency,
@@ -133,7 +133,7 @@
 		} catch (error) {
 			return {
 				id: 'open-webui',
-				name: 'Open WebUI',
+				name: APP_NAME,
 				type: 'Backend',
 				status: 'offline',
 				latency: null,

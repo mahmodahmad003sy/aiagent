@@ -189,6 +189,7 @@ COPY --chown=$UID:$GID --from=build /app/package.json /app/package.json
 
 # copy backend files
 COPY --chown=$UID:$GID ./backend .
+COPY --chown=$UID:$GID ./branding /app/branding
 
 # The backend rewrites its bundled static assets (favicons, splash, manifest,
 # loader.js, ...) under open_webui/static at startup. Make that directory

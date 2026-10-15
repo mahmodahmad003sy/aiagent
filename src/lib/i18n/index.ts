@@ -4,6 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import type { i18n as i18nType } from 'i18next';
 import { writable } from 'svelte/store';
 import type { I18nOverrides } from '$lib/utils/translationDictionary';
+import { APP_NAME } from '$lib/constants';
 
 let overrides: I18nOverrides = {};
 
@@ -93,7 +94,8 @@ export const initI18n = (defaultLocale?: string, value: I18nOverrides = {}) => {
 			nsSeparator: false,
 			returnEmptyString: false,
 			interpolation: {
-				escapeValue: false // not needed for svelte as it escapes by default
+				escapeValue: false, // not needed for svelte as it escapes by default
+				defaultVariables: { APP_NAME }
 			}
 		});
 };

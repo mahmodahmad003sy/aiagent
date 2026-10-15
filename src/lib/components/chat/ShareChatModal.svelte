@@ -39,10 +39,7 @@
 		const _chat = chat.chat;
 		console.log('share', _chat);
 
-		// LICENSE covers this Open WebUI Community wordmark.
-		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
-		// https://docs.openwebui.com/license.
-		toast.success($i18n.t('Redirecting you to Open WebUI Community'));
+		toast.success($i18n.t('Redirecting you to {{APP_NAME}} Community'));
 		const url = 'https://openwebui.com';
 		// const url = 'http://localhost:5173';
 
@@ -178,10 +175,7 @@
 								shareChat();
 							}}
 						>
-							<!-- LICENSE covers this Open WebUI Community wordmark.
-							Do not alter, remove, obscure, or replace it except as LICENSE permits:
-							https://docs.openwebui.com/license. -->
-							{$i18n.t('Share to Open WebUI Community')}
+							{$i18n.t('Share to {{APP_NAME}} Community')}
 						</button>
 					{/if}
 

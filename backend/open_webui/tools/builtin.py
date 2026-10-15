@@ -68,6 +68,7 @@ from open_webui.utils.chat_id import is_saved_chat_id
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.notifications import notify_target
 from open_webui.utils.sanitize import sanitize_code
+from open_webui.branding import BRAND_NAME
 
 log = logging.getLogger(__name__)
 
@@ -146,10 +147,7 @@ async def notify(
         return 'Notification failed: user not found.'
 
     app_name = getattr(getattr(__request__, 'app', None), 'state', None)
-    # LICENSE covers this Open WebUI notification identifier.
-    # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-    # https://docs.openwebui.com/license.
-    app_name = getattr(app_name, 'WEBUI_NAME', 'Open WebUI')
+    app_name = getattr(app_name, 'WEBUI_NAME', BRAND_NAME)
     try:
         result = await notify_target(user_id, message, target=target, title=title, app_name=app_name)
         return f'Notification sent to {result.get("target_id")}.'

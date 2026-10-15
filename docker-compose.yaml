@@ -8,12 +8,12 @@ services:
     restart: unless-stopped
     image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
 
-  open-webui:
+  smartlilac-ai-studio:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
-    container_name: open-webui
+    image: smartlilac-ai-studio:${WEBUI_DOCKER_TAG-main}
+    container_name: smartlilac-ai-studio
     volumes:
       - open-webui:/app/backend/data
     depends_on:

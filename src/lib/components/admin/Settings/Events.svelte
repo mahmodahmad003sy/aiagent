@@ -642,11 +642,8 @@
 							</div>
 
 							<div class="text-xs text-gray-500">
-								<!-- LICENSE covers this Open WebUI wordmark.
-									Do not alter, remove, obscure, or replace it except as LICENSE permits:
-									https://docs.openwebui.com/license. -->
 								{$i18n.t(
-									'Event names may change as Open WebUI evolves. Use broad patterns like user.* for integrations that should continue across new related events.'
+									'Event names may change as {{APP_NAME}} evolves. Use broad patterns like user.* for integrations that should continue across new related events.'
 								)}
 							</div>
 						</div>

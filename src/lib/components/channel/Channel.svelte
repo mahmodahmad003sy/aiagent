@@ -11,7 +11,8 @@
 		channelId as _channelId,
 		showSidebar,
 		socket,
-		user
+		user,
+		WEBUI_NAME
 	} from '$lib/stores';
 	import { getChannelById, getChannelMessages, sendMessage } from '$lib/apis/channels';
 
@@ -294,9 +295,6 @@
 </script>
 
 <svelte:head>
-	<!-- LICENSE covers this Open WebUI browser-title identifier.
-	Do not alter, remove, obscure, or replace it except as LICENSE permits:
-	https://docs.openwebui.com/license. -->
 	{#if channel?.type === 'dm'}
 		<title
 			>{channel?.name.trim() ||
@@ -310,10 +308,10 @@
 					} else {
 						return e.name;
 					}
-				}, '')} / Open WebUI</title
+				}, '')} / {$WEBUI_NAME}</title
 		>
 	{:else}
-		<title>#{channel?.name ?? 'Channel'} / Open WebUI</title>
+		<title>#{channel?.name ?? 'Channel'} / {$WEBUI_NAME}</title>
 	{/if}
 </svelte:head>
 

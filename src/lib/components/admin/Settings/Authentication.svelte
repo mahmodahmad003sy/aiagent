@@ -489,12 +489,9 @@
 					</AdminSettingField>
 				{/if}
 
-				<!-- LICENSE covers this Open WebUI wordmark.
-					Do not alter, remove, obscure, or replace it except as LICENSE permits:
-					https://docs.openwebui.com/license. -->
 				<AdminSettingRow
 					label={$i18n.t('Group Mapping')}
-					description={$i18n.t('Map LDAP groups to Open WebUI groups.')}
+					description={$i18n.t('Map LDAP groups to {{APP_NAME}} groups.')}
 					let:labelId
 				>
 					<Switch bind:state={LDAP_SERVER.enable_group_management} ariaLabelledbyId={labelId} />
@@ -712,12 +709,9 @@
 							/>
 						</AdminSettingField>
 
-						<!-- LICENSE covers this Open WebUI wordmark.
-						Do not alter, remove, obscure, or replace it except as LICENSE permits:
-						https://docs.openwebui.com/license. -->
 						<AdminSettingRow
 							label={$i18n.t('Role Mapping')}
-							description={$i18n.t('Map OAuth claims to Open WebUI roles.')}
+							description={$i18n.t('Map OAuth claims to {{APP_NAME}} roles.')}
 							let:labelId
 						>
 							<Switch
@@ -763,12 +757,9 @@
 							</AdminSettingField>
 						{/if}
 
-						<!-- LICENSE covers this Open WebUI wordmark.
-						Do not alter, remove, obscure, or replace it except as LICENSE permits:
-						https://docs.openwebui.com/license. -->
 						<AdminSettingRow
 							label={$i18n.t('Group Mapping')}
-							description={$i18n.t('Map OAuth claims to Open WebUI groups.')}
+							description={$i18n.t('Map OAuth claims to {{APP_NAME}} groups.')}
 							let:labelId
 						>
 							<Switch

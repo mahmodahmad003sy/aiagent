@@ -5,6 +5,7 @@
 	import { toast } from 'svelte-sonner';
 	import { config, models, settings, user } from '$lib/stores';
 	import type { SettingsModalRequest } from '$lib/stores';
+	import { APP_NAME } from '$lib/constants';
 	import { getUserSettings, updateUserSettings } from '$lib/apis/users';
 	import { getBackendConfig, getModels as _getModels } from '$lib/apis';
 
@@ -636,12 +637,12 @@
 			keywords: [
 				'about app',
 				'about me',
-				'about open webui',
+				`about ${APP_NAME.toLowerCase()}`,
 				'about page',
 				'about us',
 				'aboutapp',
 				'aboutme',
-				'aboutopenwebui',
+				`about${APP_NAME.toLowerCase().replace(/\s+/g, '')}`,
 				'aboutpage',
 				'aboutus',
 				'check for updates',

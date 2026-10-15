@@ -1828,9 +1828,6 @@ async def get_webhook_profile_image(webhook_id: str, user=Depends(get_verified_u
     webhook = await Channels.get_webhook_by_id(webhook_id)
     if not webhook:
         # Return default favicon if webhook not found
-        # LICENSE covers this Open WebUI fallback logo.
-        # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-        # https://docs.openwebui.com/license.
         return FileResponse(f'{STATIC_DIR}/favicon.png')
 
     if webhook.profile_image_url:
@@ -1856,9 +1853,6 @@ async def get_webhook_profile_image(webhook_id: str, user=Depends(get_verified_u
                 pass
 
     # Return default favicon if no profile image
-    # LICENSE covers this Open WebUI fallback logo.
-    # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-    # https://docs.openwebui.com/license.
     return FileResponse(f'{STATIC_DIR}/favicon.png')
 
 

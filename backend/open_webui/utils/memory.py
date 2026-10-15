@@ -10,6 +10,7 @@ from open_webui.models.config import Config
 from open_webui.models.memories import Memories
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import add_or_update_system_message, get_content_from_message
+from open_webui.branding import BRAND_NAME
 
 log = logging.getLogger(__name__)
 
@@ -566,10 +567,7 @@ Conversation:
             'messages': [
                 {
                     'role': 'system',
-                    # LICENSE covers this Open WebUI system identifier.
-                    # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-                    # https://docs.openwebui.com/license.
-                    'content': "You are Open WebUI's private memory reviewer. Return only valid JSON.",
+                    'content': f"You are {BRAND_NAME}'s private memory reviewer. Return only valid JSON.",
                 },
                 {'role': 'user', 'content': review_prompt},
             ],

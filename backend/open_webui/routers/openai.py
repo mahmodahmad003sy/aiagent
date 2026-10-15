@@ -58,6 +58,7 @@ from open_webui.utils.session_pool import (
 )
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
+from open_webui.branding import BRAND_NAME, BRAND_WEBSITE
 
 log = logging.getLogger(__name__)
 
@@ -164,11 +165,8 @@ async def get_headers_and_cookies(
         'Content-Type': 'application/json',
         **(
             {
-                # LICENSE covers this Open WebUI upstream metadata identifier.
-                # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-                # https://docs.openwebui.com/license.
-                'HTTP-Referer': 'https://openwebui.com/',
-                'X-Title': 'Open WebUI',
+                **({'HTTP-Referer': BRAND_WEBSITE} if BRAND_WEBSITE else {}),
+                'X-Title': BRAND_NAME,
             }
             if 'openrouter.ai' in url
             else {}
@@ -663,12 +661,9 @@ async def speech(request: Request, user=Depends(get_verified_user)):
                 except Exception:
                     detail = f'External: {e}'
 
-            # LICENSE covers this Open WebUI error identifier.
-            # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-            # https://docs.openwebui.com/license.
             raise HTTPException(
                 status_code=r.status if r else 500,
-                detail=detail if detail else 'Open WebUI: Server Connection Error',
+                detail=detail if detail else f'{BRAND_NAME}: Server Connection Error',
             )
 
     except ValueError:
@@ -925,10 +920,7 @@ async def get_models(request: Request, url_idx: int | None = None, user=Depends(
             except aiohttp.ClientError as e:
                 # ClientError covers all aiohttp requests issues
                 log.exception(f'Client error: {str(e)}')
-                # LICENSE covers this Open WebUI error identifier.
-                # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-                # https://docs.openwebui.com/license.
-                raise HTTPException(status_code=500, detail='Open WebUI: Server Connection Error')
+                raise HTTPException(status_code=500, detail=f'{BRAND_NAME}: Server Connection Error')
             except Exception as e:
                 log.exception(f'Unexpected error: {e}')
                 error_detail = f'Unexpected error: {str(e)}'
@@ -2068,12 +2060,9 @@ async def proxy(path: str, request: Request, user=Depends(get_verified_user)):
         raise
     except Exception as e:
         log.exception(e)
-        # LICENSE covers this Open WebUI error identifier.
-        # Do not alter, remove, obscure, or replace it except as LICENSE permits:
-        # https://docs.openwebui.com/license.
         raise HTTPException(
             status_code=r.status if r else 500,
-            detail='Open WebUI: Server Connection Error',
+            detail=f'{BRAND_NAME}: Server Connection Error',
         )
     finally:
         if not streaming:

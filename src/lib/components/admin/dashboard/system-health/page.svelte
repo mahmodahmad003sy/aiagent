@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { APP_NAME } from '$lib/constants';
+
 	const services = [
 		{
-			name: 'Open WebUI',
+			name: APP_NAME,
 			type: 'Backend',
 			status: 'Checking'
 		},

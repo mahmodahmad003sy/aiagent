@@ -188,10 +188,7 @@
 			return null;
 		});
 
-		// LICENSE covers this Open WebUI Community wordmark.
-		// Do not alter, remove, obscure, or replace it except as LICENSE permits:
-		// https://docs.openwebui.com/license.
-		toast.success($i18n.t('Redirecting you to Open WebUI Community'));
+		toast.success($i18n.t('Redirecting you to {{APP_NAME}} Community'));
 
 		const url = 'https://openwebui.com';
 
@@ -295,9 +292,6 @@
 </script>
 
 <svelte:head>
-	<!-- LICENSE covers this Open WebUI browser-title identifier.
-	Do not alter, remove, obscure, or replace it except as LICENSE permits:
-	https://docs.openwebui.com/license. -->
 	<title>
 		{$i18n.t('Tools')} / {$WEBUI_NAME}
 	</title>
