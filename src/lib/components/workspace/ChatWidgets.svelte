@@ -65,6 +65,8 @@
 		allowed_domains: [],
 		mcp_enabled: false,
 		mcp_tool_ids: [],
+		session_idle_minutes: 30,
+		debug_logs: false,
 		theme: structuredClone(DEFAULT_WIDGET_THEME)
 	};
 	let domainsText = '';
@@ -128,6 +130,8 @@
 			allowed_domains: [],
 			mcp_enabled: false,
 			mcp_tool_ids: [],
+			session_idle_minutes: 30,
+			debug_logs: false,
 			theme: structuredClone(DEFAULT_WIDGET_THEME)
 		};
 		domainsText = '';
@@ -146,6 +150,8 @@
 			allowed_domains: widget.allowed_domains ?? [],
 			mcp_enabled: widget.mcp_enabled,
 			mcp_tool_ids: [...(widget.mcp_tool_ids ?? [])],
+			session_idle_minutes: widget.session_idle_minutes ?? 30,
+			debug_logs: widget.debug_logs ?? false,
 			theme: { ...DEFAULT_WIDGET_THEME, ...(widget.theme ?? {}) }
 		};
 		domainsText = (widget.allowed_domains ?? []).join('\n');
@@ -165,6 +171,7 @@
 		welcome_message: form.welcome_message?.trim() || null,
 		allowed_domains: normalizeDomains(),
 		mcp_tool_ids: form.mcp_enabled ? form.mcp_tool_ids : [],
+		session_idle_minutes: Math.min(Math.max(Math.round(Number(form.session_idle_minutes) || 0), 0), 1440),
 		theme: {
 			...form.theme,
 			header_title: form.theme.header_title?.trim() || null,
@@ -744,6 +751,44 @@
 									{/each}
 								</div>
 							{/if}
+						</div>
+
+						<div class="space-y-3 rounded-lg border border-gray-100 p-3 dark:border-gray-850">
+							<div>
+								<div class="text-sm font-medium">{$i18n.t('Conversations')}</div>
+								<div class="text-xs text-gray-500">
+									{$i18n.t(
+										'Moving between pages of your site keeps the chat. Reloading the page, closing the tab or clicking "New chat" starts a new chat, which must log in to tools again.'
+									)}
+								</div>
+							</div>
+
+							<label class="flex items-center justify-between gap-3">
+								<div>
+									<div class="text-sm">{$i18n.t('Idle timeout (minutes)')}</div>
+									<div class="text-xs text-gray-500">
+										{$i18n.t('Start a new chat after this much inactivity. 0 turns it off.')}
+									</div>
+								</div>
+								<input
+									type="number"
+									min="0"
+									max="1440"
+									step="1"
+									class="w-20 rounded-lg border border-gray-200 bg-transparent px-2 py-1 text-right text-sm outline-none focus:border-gray-400 dark:border-gray-800"
+									bind:value={form.session_idle_minutes}
+								/>
+							</label>
+
+							<div class="flex items-center justify-between gap-3">
+								<div>
+									<div class="text-sm">{$i18n.t('Console logs')}</div>
+									<div class="text-xs text-gray-500">
+										{$i18n.t('Log widget events to the browser console of the host page')}
+									</div>
+								</div>
+								<Switch bind:state={form.debug_logs} ariaLabel={$i18n.t('Console logs')} />
+							</div>
 						</div>
 
 						{#if selectedWidget}

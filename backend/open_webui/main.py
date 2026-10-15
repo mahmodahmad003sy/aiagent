@@ -1275,6 +1275,8 @@ async def chat_completion(
             'user_message_id': user_message.get('id') if user_message else None,
             'assistant_message_id': form_data.pop('assistant_message_id', None),
             'session_id': form_data.pop('session_id', None),
+            # Set server-side by the public widget router only; never read from the request body.
+            'widget_session_id': getattr(request.state, 'widget_session_id', None),
             'automation_id': automation_id,
             'folder_id': form_data.pop('folder_id', None),
             'filter_ids': form_data.pop('filter_ids', []),

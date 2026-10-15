@@ -312,3 +312,7 @@ cypress/videos
 cypress/screenshots
 .vscode/settings.json
 .cptr
+
+# Local project docs (widget/crawl plans); keep upstream security policy tracked
+docs/*
+!docs/SECURITY.md

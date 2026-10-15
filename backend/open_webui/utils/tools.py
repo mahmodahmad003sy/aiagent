@@ -123,6 +123,8 @@ from pydantic.fields import FieldInfo
 
 log = logging.getLogger(__name__)
 
+WIDGET_SESSION_HEADER = 'X-OpenWebUI-Widget-Session-Id'
+
 
 async def build_tool_server_headers(
     connection: dict,
@@ -174,6 +176,11 @@ async def build_tool_server_headers(
     connection_headers = connection.get('headers', None)
     if connection_headers and isinstance(connection_headers, dict):
         headers.update(await get_custom_headers(connection_headers, user, metadata))
+
+    # Chat widget turns all run as the widget owner. This header tells tool servers which
+    # widget conversation the call belongs to, so they can keep one login per visitor chat.
+    if metadata.get('widget_session_id'):
+        headers[WIDGET_SESSION_HEADER] = metadata['widget_session_id']
 
     # Add user info headers if enabled
     if ENABLE_FORWARD_USER_INFO_HEADERS and user:

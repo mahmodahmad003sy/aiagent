@@ -11,6 +11,7 @@
 	var widgetId = script.getAttribute('data-widget-id') || '';
 	var token = script.getAttribute('data-token') || '';
 	var apiBase = (script.getAttribute('data-api-base') || window.location.origin).replace(/\/$/, '');
+	var forceDebug = script.getAttribute('data-debug') === 'true';
 	var mountId = 'owui-chat-widget-' + widgetId;
 
 	if (!widgetId || !token || document.getElementById(mountId)) return;
@@ -28,7 +29,14 @@
 	var LAUNCHER_RADIUS = { circle: '999px', rounded: '16px', square: '6px' };
 
 	var storageKey = 'owui_chat_widget_' + widgetId;
+	var tabKey = 'owui_chat_widget_session_' + widgetId;
+	// visitor_id is remembered per browser. session_id (the conversation, and with it any tool
+	// login) is kept per tab in sessionStorage: moving to another page of the site continues the
+	// chat, while a reload, a closed tab or "New chat" starts a new one.
 	var state = loadState();
+	var tabState = loadTabState();
+	var sessionId = null;
+	var isResuming = false;
 	var config = null;
 	var configPromise = null;
 	var isOpen = false;
@@ -47,7 +55,7 @@
 		'<span class="owui-badge" aria-hidden="true"></span>' +
 		'</button>' +
 		'<section class="owui-panel" aria-label="Chat widget" aria-live="polite" role="dialog">' +
-		'<header class="owui-header"><div class="owui-brand"><div class="owui-avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 4A3.5 3.5 0 0 0 2 7.5v5A3.5 3.5 0 0 0 5.5 16H7v3.2a.8.8 0 0 0 1.3.62L13.08 16h5.42A3.5 3.5 0 0 0 22 12.5v-5A3.5 3.5 0 0 0 18.5 4h-13Z"/></svg></div><div class="owui-heading"><div class="owui-title">Chat</div><div class="owui-status"><span class="owui-status-dot"></span><span class="owui-subtitle">Connecting</span></div></div></div><button class="owui-close" type="button" aria-label="Close chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></svg></button></header>' +
+		'<header class="owui-header"><div class="owui-brand"><div class="owui-avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 4A3.5 3.5 0 0 0 2 7.5v5A3.5 3.5 0 0 0 5.5 16H7v3.2a.8.8 0 0 0 1.3.62L13.08 16h5.42A3.5 3.5 0 0 0 22 12.5v-5A3.5 3.5 0 0 0 18.5 4h-13Z"/></svg></div><div class="owui-heading"><div class="owui-title">Chat</div><div class="owui-status"><span class="owui-status-dot"></span><span class="owui-subtitle">Connecting</span></div></div></div><div class="owui-actions"><button class="owui-new-chat" type="button" aria-label="New chat" title="New chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5Z"/></svg></button><button class="owui-close" type="button" aria-label="Close chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></svg></button></div></header>' +
 		'<div class="owui-messages"></div>' +
 		'<form class="owui-form"><textarea class="owui-input" rows="1" placeholder="Type a message" aria-label="Message"></textarea><button class="owui-send" type="submit" aria-label="Send message"><svg class="owui-send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21.2 12 3.4 3.6 3 10.2l10.4 1.8L3 13.8l.4 6.6Z"/></svg><span class="owui-send-spinner" aria-hidden="true"></span></button></form>' +
 		'</section>';
@@ -57,6 +65,7 @@
 
 	var launcher = root.querySelector('.owui-launcher');
 	var closeButton = root.querySelector('.owui-close');
+	var newChatButton = root.querySelector('.owui-new-chat');
 	var messages = root.querySelector('.owui-messages');
 	var form = root.querySelector('.owui-form');
 	var input = root.querySelector('.owui-input');
@@ -70,6 +79,21 @@
 	});
 	closeButton.addEventListener('click', function () {
 		setOpen(false);
+	});
+	newChatButton.addEventListener('click', function () {
+		if (isSending) return;
+		startNewChat('new_chat');
+		input.focus();
+	});
+	// Reload, tab close and moving to another page all fire pagehide, and the browser cannot tell
+	// them apart. The server keeps the chat for a short grace period: the next page of the site
+	// resumes it, a reload ends it at once, and if nothing comes back the tab was closed.
+	window.addEventListener('pagehide', function () {
+		if (sessionId) sendSessionEvent(sessionId, 'page_hide');
+	});
+	window.addEventListener('pageshow', function (event) {
+		// Restored from the back/forward cache: cancel the pending end and keep the chat on screen.
+		if (event.persisted && sessionId) resumeSession(false);
 	});
 	document.addEventListener('keydown', function (event) {
 		if (event.key === 'Escape' && isOpen) setOpen(false);
@@ -92,21 +116,76 @@
 
 	setInputEnabled(false);
 	updateLauncher();
-	loadConfig();
+	startup();
 
-	function loadState() {
-		try {
-			var parsed = JSON.parse(window.localStorage.getItem(storageKey) || '{}');
-			if (!parsed.visitor_id) parsed.visitor_id = cryptoRandomId();
-			return parsed;
-		} catch (error) {
-			return { visitor_id: cryptoRandomId() };
+	function startup() {
+		var stored = tabState.session_id || null;
+		if (stored && navigationType() === 'reload') {
+			// A reload always starts a new chat (and a new tool login).
+			sendSessionEvent(stored, 'page_reload');
+			debugLog('session.end', { session: shortId(stored), reason: 'page_reload' });
+			stored = null;
+			saveTabState();
+		}
+		var configReady = loadConfig();
+		if (stored) {
+			sessionId = stored;
+			isResuming = true;
+			if (tabState.open) setOpen(true, true);
+			configReady.then(function () {
+				resumeSession(true);
+			});
 		}
 	}
 
-	function saveState() {
+	function navigationType() {
 		try {
-			window.localStorage.setItem(storageKey, JSON.stringify(state));
+			var entries = window.performance && performance.getEntriesByType && performance.getEntriesByType('navigation');
+			if (entries && entries[0] && entries[0].type) return entries[0].type;
+		} catch (error) {
+			// Fall through to the legacy API.
+		}
+		try {
+			if (window.performance && performance.navigation && performance.navigation.type === 1) return 'reload';
+		} catch (error) {
+			// Unknown: treat as a normal navigation.
+		}
+		return 'navigate';
+	}
+
+	function loadTabState() {
+		try {
+			return JSON.parse(window.sessionStorage.getItem(tabKey) || '{}') || {};
+		} catch (error) {
+			return {};
+		}
+	}
+
+	function saveTabState() {
+		try {
+			window.sessionStorage.setItem(tabKey, JSON.stringify({ session_id: sessionId, open: isOpen }));
+		} catch (error) {
+			// Without sessionStorage the chat lasts for this page only.
+		}
+	}
+
+	function loadState() {
+		var next = { visitor_id: null };
+		try {
+			var parsed = JSON.parse(window.localStorage.getItem(storageKey) || '{}');
+			next.visitor_id = parsed.visitor_id || null;
+		} catch (error) {
+			// Storage can be blocked by the host page.
+		}
+		if (!next.visitor_id) next.visitor_id = cryptoRandomId();
+		// Older versions stored session_id here; rewriting the entry drops it.
+		saveState(next);
+		return next;
+	}
+
+	function saveState(value) {
+		try {
+			window.localStorage.setItem(storageKey, JSON.stringify({ visitor_id: (value || state).visitor_id }));
 		} catch (error) {
 			// Storage can be blocked by the host page. The widget still works for the active tab.
 		}
@@ -117,15 +196,182 @@
 		return 'visitor_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 	}
 
-	function setOpen(next) {
+	function debugEnabled() {
+		if (forceDebug || (config && config.debug_logs)) return true;
+		try {
+			return window.localStorage.getItem('owui_widget_debug') === '1';
+		} catch (error) {
+			return false;
+		}
+	}
+
+	function debugLog(event, fields) {
+		if (!debugEnabled() || !window.console) return;
+		var parts = ['[OWUI Widget] ' + event];
+		Object.keys(fields || {}).forEach(function (key) {
+			var value = fields[key];
+			if (value !== undefined && value !== null && value !== '') parts.push(key + '=' + value);
+		});
+		console.info(parts.join(' '));
+	}
+
+	function shortId(id) {
+		return id ? String(id).slice(0, 8) : '';
+	}
+
+	function setSession(id, info) {
+		if (!id || id === sessionId) return;
+		var previous = sessionId;
+		sessionId = id;
+		saveTabState();
+		var previousEnd = info && info.previous_session_end;
+		if (previous && previousEnd) {
+			// The server refused to continue the old conversation (idle timeout, ...).
+			debugLog('session.end', { session: shortId(previous), reason: previousEnd });
+			if (previousEnd === 'idle_timeout') {
+				addNotice('Your previous chat expired, so a new chat was started.');
+			}
+		}
+		debugLog('session.start', { session: shortId(id), widget: shortId(widgetId) });
+	}
+
+	// Tells the server the conversation is over: it is closed for good and any tool login
+	// (e.g. an MCP account login) made in it is dropped. Works during page unload.
+	function endSession(reason) {
+		if (!sessionId) return;
+		var ending = sessionId;
+		sessionId = null;
+		saveTabState();
+		debugLog('session.end', { session: shortId(ending), reason: reason });
+		sendSessionEvent(ending, reason);
+	}
+
+	// reason "page_hide" only starts the server's grace period; any other reason ends the chat.
+	function sendSessionEvent(id, reason) {
+		if (reason === 'page_hide') debugLog('session.hide', { session: shortId(id) });
+		var url = apiBase + '/api/v1/widgets/public/session/end?token=' + encodeURIComponent(token);
+		// text/plain keeps this a simple CORS request, so it needs no preflight.
+		var body = JSON.stringify({ widget_id: widgetId, session_id: id, visitor_id: state.visitor_id, reason: reason });
+		var sent = false;
+		try {
+			if (navigator.sendBeacon) {
+				sent = navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+			}
+		} catch (error) {
+			sent = false;
+		}
+		if (!sent) {
+			try {
+				fetch(url, {
+					method: 'POST',
+					keepalive: true,
+					headers: { 'Content-Type': 'text/plain' },
+					body: body
+				}).catch(function () {});
+			} catch (error) {
+				// Nothing else to try; the server's idle timeout ends the conversation later.
+			}
+		}
+	}
+
+	function resetConversation(reason) {
+		sessionId = null;
+		saveTabState();
+		renderMessages([]);
+		debugLog('chat.reset', { reason: reason });
+	}
+
+	function renderMessages(list) {
+		messages.innerHTML = '';
+		if (config && config.welcome_message) {
+			addMessage('assistant', config.welcome_message, { quiet: true });
+		}
+		list.forEach(function (item) {
+			var role = item.error ? 'error' : item.role === 'user' ? 'user' : 'assistant';
+			addMessage(role, item.content || '', { quiet: true });
+		});
+	}
+
+	// Continues this tab's chat on a new page: cancels the server's pending end and shows the
+	// conversation again (credentials already masked). The tool login stays in place.
+	function resumeSession(render) {
+		var resuming = sessionId;
+		if (!resuming) return;
+		isResuming = true;
+		setInputEnabled(false);
+		debugLog('session.resume', { session: shortId(resuming) });
+
+		fetch(apiBase + '/api/v1/widgets/public/session/resume', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				'X-Widget-Token': token
+			},
+			body: JSON.stringify({ widget_id: widgetId, session_id: resuming, visitor_id: state.visitor_id })
+		})
+			.then(function (response) {
+				if (!response.ok) throw new Error('Resume failed (' + response.status + ')');
+				return response.json();
+			})
+			.then(function (data) {
+				if (sessionId !== resuming) return;
+				if (!data.active) {
+					debugLog('session.end', { session: shortId(resuming), reason: data.previous_session_end || 'ended' });
+					resetConversation('resume_inactive');
+					if (data.previous_session_end === 'idle_timeout') {
+						addNotice('Your previous chat expired, so a new chat was started.');
+					}
+					return;
+				}
+				var list = data.messages || [];
+				if (render) renderMessages(list);
+				debugLog('session.resumed', { session: shortId(resuming), messages: list.length });
+			})
+			.catch(function (error) {
+				// Keep the session id: the next message lets the server decide whether it continues.
+				debugLog('session.resume_error', { session: shortId(resuming), error: error && error.message });
+			})
+			.finally(function () {
+				isResuming = false;
+				setInputEnabled(isReady);
+			});
+	}
+
+	function startNewChat(reason) {
+		endSession(reason);
+		resetConversation(reason);
+	}
+
+	function addNotice(text) {
+		var node = document.createElement('div');
+		node.className = 'owui-notice';
+		node.textContent = text;
+		var last = messages.lastElementChild;
+		// Place it above the visitor's pending message so it reads in order.
+		var anchor = last && last.previousElementSibling;
+		if (anchor && anchor.classList.contains('owui-user')) {
+			messages.insertBefore(node, anchor);
+		} else {
+			messages.appendChild(node);
+		}
+		scrollMessages();
+	}
+
+	function setOpen(next, restoring) {
 		isOpen = next;
 		root.classList.toggle('owui-open', isOpen);
+		saveTabState();
+		debugLog(isOpen ? 'panel.open' : 'panel.close', { session: shortId(sessionId) });
 		if (isOpen) {
 			unreadCount = 0;
 			loadConfig();
-			setTimeout(function () {
-				input.focus();
-			}, 80);
+			// Re-opening on a new page must not grab focus (it would pop up the phone keyboard).
+			if (!restoring) {
+				setTimeout(function () {
+					input.focus();
+				}, 80);
+			}
 		}
 		updateLauncher();
 	}
@@ -164,6 +410,7 @@
 			})
 			.then(function (data) {
 				config = data;
+				debugLog('config.loaded', { widget: shortId(widgetId), visitor: shortId(state.visitor_id) });
 				title.textContent = data.name || 'Chat';
 				applyTheme(data.theme);
 				isReady = true;
@@ -174,7 +421,8 @@
 				}
 				return data;
 			})
-			.catch(function () {
+			.catch(function (error) {
+				debugLog('config.error', { error: error && error.message });
 				isReady = false;
 				root.classList.add('owui-unavailable');
 				setStatus('Unavailable');
@@ -193,7 +441,7 @@
 
 	function sendMessage() {
 		var text = input.value.trim();
-		if (!text || isSending) return;
+		if (!text || isSending || isResuming) return;
 
 		if (!isReady) {
 			loadConfig();
@@ -209,6 +457,8 @@
 		root.classList.add('owui-sending');
 		setInputEnabled(false);
 		setStatus('Typing');
+		newChatButton.disabled = true;
+		debugLog('message.send', { session: shortId(sessionId) || 'new', chars: text.length });
 
 		fetch(apiBase + '/api/v1/widgets/public/chat', {
 			method: 'POST',
@@ -220,27 +470,26 @@
 			body: JSON.stringify({
 				widget_id: widgetId,
 				visitor_id: state.visitor_id,
-				session_id: state.session_id || null,
+				session_id: sessionId,
 				message: text,
 				stream: true
 			})
 		})
 			.then(function (response) {
-				if (!response.ok) throw new Error('Message failed');
+				if (!response.ok) throw new Error('Message failed (' + response.status + ')');
 				var contentType = response.headers.get('content-type') || '';
 				if (contentType.indexOf('text/event-stream') !== -1 && response.body) {
 					return readStream(response, assistant);
 				}
 				return response.json().then(function (data) {
-					if (data.session_id) {
-						state.session_id = data.session_id;
-						saveState();
-					}
+					if (data.session_id) setSession(data.session_id, data);
 					setMessageText(assistant, data.content || '');
+					debugLog('message.done', { session: shortId(sessionId), chars: (data.content || '').length });
 					if (data.content && !isOpen) bumpUnread();
 				});
 			})
-			.catch(function () {
+			.catch(function (error) {
+				debugLog('message.error', { session: shortId(sessionId), error: error && error.message });
 				assistant.classList.add('owui-error');
 				setMessageText(assistant, 'Something went wrong. Please try again.');
 				if (!isOpen) bumpUnread();
@@ -248,6 +497,7 @@
 			.finally(function () {
 				assistant.classList.remove('owui-streaming');
 				isSending = false;
+				newChatButton.disabled = false;
 				root.classList.remove('owui-sending');
 				setInputEnabled(isReady);
 				setStatus(isReady ? 'Online' : 'Unavailable');
@@ -286,20 +536,22 @@
 				try {
 					var data = JSON.parse(payload);
 					if (data.widget && data.widget.session_id) {
-						state.session_id = data.widget.session_id;
-						saveState();
+						setSession(data.widget.session_id, data.widget);
 						return;
 					}
 					if (data.widget_status) {
+						debugLog('stream.tool', { session: shortId(sessionId), tool: data.widget_status.name });
 						setStatus('Using tools');
 						return;
 					}
 					if (data.widget_final) {
 						fullText = data.widget_final.content || fullText;
 						setMessageText(assistant, fullText);
+						debugLog('stream.done', { session: shortId(sessionId), chars: fullText.length });
 						return;
 					}
 					if (data.widget_error) {
+						debugLog('stream.error', { session: shortId(sessionId) });
 						assistant.classList.add('owui-error');
 						fullText = data.widget_error.message || 'Something went wrong. Please try again.';
 						setMessageText(assistant, fullText);
@@ -360,6 +612,7 @@
 	}
 
 	function setInputEnabled(enabled) {
+		enabled = enabled && !isResuming;
 		input.disabled = !enabled;
 		sendButton.disabled = !enabled || isSending;
 		root.classList.toggle('owui-ready', enabled);
@@ -450,7 +703,13 @@
 			'.owui-open .owui-panel{opacity:1;pointer-events:auto;transform:translateY(0) scale(1)}' +
 			'.owui-left{left:var(--owui-offset-x,20px);right:auto}.owui-left .owui-panel{left:0;right:auto;transform-origin:bottom left}.owui-hide-status .owui-status{display:none}' +
 			'.owui-header{height:62px;flex:0 0 62px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #eef0f3;background:var(--owui-header-bg,#fff)}.owui-brand{min-width:0;display:flex;align-items:center;gap:10px}.owui-avatar{width:36px;height:36px;border-radius:10px;background:var(--owui-primary,#111827);color:var(--owui-on-primary,#fff);overflow:hidden;display:flex;align-items:center;justify-content:center;flex:0 0 auto}.owui-avatar svg{width:19px;height:19px;fill:currentColor}.owui-avatar-img{width:100%;height:100%;object-fit:cover;display:block}.owui-avatar-img~svg{display:none}.owui-heading{min-width:0}.owui-title{max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(var(--owui-font-size,14px) + 1px);font-weight:650;line-height:1.2;color:var(--owui-header-fg,#111827)}.owui-status{display:flex;align-items:center;gap:6px;margin-top:3px}.owui-status-dot{width:7px;height:7px;border-radius:999px;background:#9ca3af}.owui-ready .owui-status-dot{background:#16a34a}.owui-unavailable .owui-status-dot{background:#dc2626}.owui-sending .owui-status-dot{background:#2563eb;animation:owuiPulse 1s infinite}.owui-subtitle{font-size:12px;color:var(--owui-header-fg,#6b7280);opacity:.7;line-height:1.2}' +
-			'.owui-close{width:34px;height:34px;flex:0 0 34px;border:0;border-radius:8px;background:transparent;color:var(--owui-header-fg,#4b5563);display:flex;align-items:center;justify-content:center;cursor:pointer}.owui-close:hover{background:#f3f4f6}.owui-close:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:1px}.owui-close svg{width:19px;height:19px;fill:currentColor}' +
+			'.owui-close{width:34px;height:34px;flex:0 0 34px;border:0;border-radius:8px;background:transparent;color:var(--owui-header-fg,#4b5563);display:flex;align-items:center;justify-content:center;cursor:pointer}.owui-close:hover,.owui-new-chat:hover:not(:disabled){background:#f3f4f6}.owui-close:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:1px}.owui-close svg{width:19px;height:19px;fill:currentColor}' +
+			'.owui-actions{display:flex;align-items:center;gap:2px;flex:0 0 auto}' +
+			'.owui-new-chat{width:34px;height:34px;flex:0 0 34px;border:0;border-radius:8px;background:transparent;color:var(--owui-header-fg,#4b5563);display:flex;align-items:center;justify-content:center;cursor:pointer}' +
+			'.owui-new-chat:disabled{opacity:.4;cursor:default}' +
+			'.owui-new-chat:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:1px}' +
+			'.owui-new-chat svg{width:20px;height:20px;fill:currentColor}' +
+			'.owui-notice{align-self:center;max-width:90%;font-size:12px;line-height:1.4;color:#6b7280;text-align:center;padding:2px 8px}' +
 			'.owui-messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--owui-bg,#fafafa);scrollbar-width:thin}.owui-message{display:flex;min-width:0}.owui-user{justify-content:flex-end}.owui-assistant,.owui-error{justify-content:flex-start}.owui-bubble{max-width:82%;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:var(--owui-bubble-radius,12px);padding:9px 11px;font-size:var(--owui-font-size,14px);line-height:1.45;background:var(--owui-assistant-bg,#fff);border:1px solid #eceff3;color:var(--owui-assistant-fg,#111827);box-shadow:0 1px 2px rgba(17,24,39,.04)}.owui-user .owui-bubble{background:var(--owui-user-bg,#111827);color:var(--owui-user-fg,#fff);border-color:var(--owui-user-bg,#111827)}.owui-error .owui-bubble{background:#fff1f2;border-color:#fecdd3;color:#9f1239}' +
 			'.owui-streaming .owui-bubble:empty:after{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:#9ca3af;animation:owuiPulse 1s infinite}.owui-form{display:flex;align-items:flex-end;gap:8px;padding:10px;border-top:1px solid #eef0f3;background:#fff}.owui-input{flex:1;min-width:0;min-height:42px;max-height:112px;resize:none;border:1px solid #d9dee7;border-radius:10px;padding:10px 11px;font-size:var(--owui-font-size,14px);line-height:1.35;outline:none;background:#fff;color:#111827}.owui-input:focus{border-color:var(--owui-primary,#111827);box-shadow:0 0 0 3px rgba(17,24,39,.08)}.owui-input:disabled{background:#f9fafb;color:#9ca3af;cursor:not-allowed}.owui-input::placeholder{color:#9ca3af}' +
 			'.owui-send{position:relative;width:42px;height:42px;flex:0 0 42px;border:0;border-radius:10px;background:var(--owui-primary,#111827);color:var(--owui-on-primary,#fff);display:flex;align-items:center;justify-content:center;cursor:pointer}.owui-send:hover:not(:disabled){background:var(--owui-primary,#111827);filter:brightness(1.15)}.owui-send:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:1px}.owui-send:disabled{opacity:.55;cursor:not-allowed}.owui-send svg{width:19px;height:19px;fill:currentColor}.owui-send-spinner{position:absolute;width:18px;height:18px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:999px;display:none;animation:owuiSpin .75s linear infinite}.owui-sending .owui-send-icon{opacity:0}.owui-sending .owui-send-spinner{display:block}.owui-launcher-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .16s ease}.owui-launcher-has-img .owui-launcher-chat{display:none}.owui-open .owui-launcher-img{opacity:0}' +

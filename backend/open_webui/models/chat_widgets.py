@@ -64,6 +64,8 @@ AVATAR_DATA_URL_RE = re.compile(r'^data:image/(png|jpeg|webp|gif);base64,[A-Za-z
 AVATAR_MAX_LENGTH = 150_000
 MCP_TOOL_ID_PREFIX = 'server:mcp:'
 MAX_MCP_TOOL_IDS = 20
+DEFAULT_SESSION_IDLE_MINUTES = 30
+MAX_SESSION_IDLE_MINUTES = 24 * 60
 
 
 class ChatWidgetTheme(BaseModel):
@@ -174,6 +176,8 @@ class ChatWidget(Base):
     mcp_tool_ids = Column(JSON, nullable=True)
     folder_id = Column(Text, nullable=True)
     knowledge_id = Column(Text, nullable=True)
+    session_idle_minutes = Column(BigInteger, nullable=False, default=DEFAULT_SESSION_IDLE_MINUTES)
+    debug_logs = Column(Boolean, nullable=False, default=False)
     created_at = Column(BigInteger, nullable=False, index=True)
     updated_at = Column(BigInteger, nullable=False, index=True)
 
@@ -194,6 +198,10 @@ class ChatWidgetSession(Base):
     message_count = Column(BigInteger, nullable=False, default=0)
     chat_id = Column(Text, nullable=True, index=True)
     chat_last_message_id = Column(Text, nullable=True)
+    ended_at = Column(BigInteger, nullable=True)
+    end_reason = Column(Text, nullable=True)
+    # Set when the visitor's page was hidden (navigation or tab close); cleared when a page resumes.
+    hidden_at = Column(BigInteger, nullable=True)
     created_at = Column(BigInteger, nullable=False, index=True)
     updated_at = Column(BigInteger, nullable=False, index=True)
     last_activity_at = Column(BigInteger, nullable=False, index=True)
@@ -242,8 +250,20 @@ class ChatWidgetModel(BaseModel):
     mcp_tool_ids: list[str] = Field(default_factory=list)
     folder_id: Optional[str] = None
     knowledge_id: Optional[str] = None
+    session_idle_minutes: int = DEFAULT_SESSION_IDLE_MINUTES
+    debug_logs: bool = False
     created_at: int
     updated_at: int
+
+    @field_validator('session_idle_minutes', mode='before')
+    @classmethod
+    def default_session_idle_minutes(cls, value):
+        return DEFAULT_SESSION_IDLE_MINUTES if value is None else value
+
+    @field_validator('debug_logs', mode='before')
+    @classmethod
+    def default_debug_logs(cls, value):
+        return bool(value)
 
     @field_validator('theme', mode='before')
     @classmethod
@@ -267,6 +287,9 @@ class ChatWidgetSessionModel(BaseModel):
     message_count: int = 0
     chat_id: Optional[str] = None
     chat_last_message_id: Optional[str] = None
+    ended_at: Optional[int] = None
+    end_reason: Optional[str] = None
+    hidden_at: Optional[int] = None
     created_at: int
     updated_at: int
     last_activity_at: int
@@ -298,6 +321,9 @@ class ChatWidgetForm(BaseModel):
     theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
     mcp_enabled: bool = False
     mcp_tool_ids: list[str] = Field(default_factory=list)
+    # 0 keeps a widget chat open until the page is reloaded or closed.
+    session_idle_minutes: int = Field(default=DEFAULT_SESSION_IDLE_MINUTES, ge=0, le=MAX_SESSION_IDLE_MINUTES)
+    debug_logs: bool = False
     model_config = ConfigDict(extra='forbid')
 
     @field_validator('allowed_domains')
@@ -321,6 +347,8 @@ class ChatWidgetUpdateForm(BaseModel):
     theme: Optional[ChatWidgetTheme] = None
     mcp_enabled: Optional[bool] = None
     mcp_tool_ids: Optional[list[str]] = None
+    session_idle_minutes: Optional[int] = Field(default=None, ge=0, le=MAX_SESSION_IDLE_MINUTES)
+    debug_logs: Optional[bool] = None
     model_config = ConfigDict(extra='forbid')
 
     @field_validator('allowed_domains')
@@ -543,6 +571,37 @@ class ChatWidgetSessionTable:
                 session.chat_last_message_id = chat_last_message_id
             await db.commit()
 
+    async def end_session(
+        self,
+        id: str,
+        reason: str,
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """Close a widget conversation for good. Returns False if it was already ended or is missing."""
+        async with get_async_db_context(db) as db:
+            session = await db.get(ChatWidgetSession, id)
+            if not session or session.ended_at:
+                return False
+            now = int(time.time())
+            session.ended_at = now
+            session.end_reason = reason
+            session.updated_at = now
+            await db.commit()
+            return True
+
+    async def set_hidden_at(
+        self,
+        id: str,
+        hidden_at: Optional[int],
+        db: Optional[AsyncSession] = None,
+    ) -> None:
+        async with get_async_db_context(db) as db:
+            session = await db.get(ChatWidgetSession, id)
+            if not session or session.ended_at:
+                return
+            session.hidden_at = hidden_at
+            await db.commit()
+
     async def delete_session_by_id_and_widget_id(
         self,
         id: str,
@@ -596,6 +655,22 @@ class ChatWidgetMessageTable:
             await db.commit()
             await db.refresh(message)
             return ChatWidgetMessageModel.model_validate(message)
+
+    async def update_message_content(
+        self,
+        id: str,
+        content: Optional[Any] = None,
+        error: Optional[dict | str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> None:
+        async with get_async_db_context(db) as db:
+            message = await db.get(ChatWidgetMessage, id)
+            if not message:
+                return
+            message.content = content
+            message.error = error
+            message.updated_at = int(time.time())
+            await db.commit()
 
     async def get_messages_by_session_id(
         self, session_id: str, db: Optional[AsyncSession] = None

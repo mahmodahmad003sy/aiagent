@@ -92,6 +92,8 @@ export type ChatWidget = {
 	theme: ChatWidgetTheme;
 	mcp_enabled: boolean;
 	mcp_tool_ids: string[];
+	session_idle_minutes: number;
+	debug_logs: boolean;
 	folder_id?: string | null;
 	knowledge_id?: string | null;
 	created_at: number;
@@ -108,6 +110,8 @@ export type ChatWidgetForm = {
 	theme: ChatWidgetTheme;
 	mcp_enabled: boolean;
 	mcp_tool_ids: string[];
+	session_idle_minutes: number;
+	debug_logs: boolean;
 };
 
 export type ChatWidgetSession = {
@@ -119,6 +123,8 @@ export type ChatWidgetSession = {
 	message_count: number;
 	chat_id?: string | null;
 	chat_last_message_id?: string | null;
+	ended_at?: number | null;
+	end_reason?: string | null;
 	created_at: number;
 	updated_at: number;
 	last_activity_at: number;
