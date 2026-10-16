@@ -31,6 +31,8 @@ from sqlalchemy.orm import defer
 
 ACTIVE_STATUSES = ('pending', 'running')
 CrawlFileType = Literal['pdf', 'docx', 'xlsx', 'csv', 'txt', 'pptx']
+# auto: render in a browser only pages whose HTML has no text (React/Vite/Vue apps).
+CrawlRenderMode = Literal['auto', 'always', 'never']
 
 
 def _normalize_paths(value: list[str] | None) -> list[str]:
@@ -73,6 +75,7 @@ class ChatWidgetCrawlSettings(BaseModel):
     request_timeout: int = Field(default=20, ge=5, le=120)
     request_delay_ms: int = Field(default=500, ge=0, le=10000)
     max_concurrency: int = Field(default=2, ge=1, le=5)
+    render_js: CrawlRenderMode = 'auto'
 
     @field_validator('start_url')
     @classmethod

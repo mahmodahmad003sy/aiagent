@@ -598,6 +598,21 @@
 								disabled={jobActive}
 							/>
 						</label>
+						<label class="col-span-2 block">
+							<div class={labelClass}>{$i18n.t('JavaScript rendering')}</div>
+							<select class={inputClass} bind:value={settings.render_js} disabled={jobActive}>
+								<option value="auto"
+									>{$i18n.t('Auto (only pages without text, e.g. React/Vite apps)')}</option
+								>
+								<option value="always">{$i18n.t('Always (slower)')}</option>
+								<option value="never">{$i18n.t('Never (plain HTML only)')}</option>
+							</select>
+							<div class="mt-1 text-xs text-gray-500">
+								{$i18n.t(
+									'Sites built with React, Vite or Vue send an empty page and draw the text with JavaScript. Those pages are loaded in a headless browser.'
+								)}
+							</div>
+						</label>
 						<label class="block">
 							<div class={labelClass}>{$i18n.t('Parallel requests')}</div>
 							<input
@@ -735,6 +750,19 @@
 						<div class="text-gray-500">
 							{$i18n.t('Crawled')}: {formatTime(resultsRun.finished_at)}
 						</div>
+						{#if resultsRun.progress?.rendered}
+							<div class="text-gray-500">
+								{$i18n.t('Pages rendered with JavaScript')}: {resultsRun.progress.rendered}
+							</div>
+						{/if}
+						{#if resultsRun.progress?.render_error}
+							<div class="text-amber-600">
+								{$i18n.t(
+									'Some pages need JavaScript to show their text, but rendering is not available:'
+								)}
+								{resultsRun.progress.render_error}
+							</div>
+						{/if}
 						{#if resultsRun.progress?.limit_reached}
 							<div class="text-amber-600">
 								{$i18n.t(

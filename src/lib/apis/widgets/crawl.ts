@@ -11,6 +11,9 @@ export const SUPPORTED_CRAWL_FILE_TYPES: CrawlFileType[] = [
 	'pptx'
 ];
 
+// auto: load pages in a headless browser only when their HTML has no text (React, Vite, Vue apps).
+export type CrawlRenderMode = 'auto' | 'always' | 'never';
+
 export type CrawlSettings = {
 	start_url: string;
 	max_depth: number;
@@ -27,6 +30,7 @@ export type CrawlSettings = {
 	request_timeout: number;
 	request_delay_ms: number;
 	max_concurrency: number;
+	render_js: CrawlRenderMode;
 };
 
 // Must match backend ChatWidgetCrawlSettings defaults exactly.
@@ -45,7 +49,8 @@ export const DEFAULT_CRAWL_SETTINGS: CrawlSettings = {
 	max_total_size_mb: 500,
 	request_timeout: 20,
 	request_delay_ms: 500,
-	max_concurrency: 2
+	max_concurrency: 2,
+	render_js: 'auto'
 };
 
 export type CrawlConfig = {
@@ -147,7 +152,8 @@ export const canonicalCrawlSettings = (settings: Partial<CrawlSettings>): CrawlS
 		),
 		request_timeout: Number(settings.request_timeout ?? DEFAULT_CRAWL_SETTINGS.request_timeout),
 		request_delay_ms: Number(settings.request_delay_ms ?? DEFAULT_CRAWL_SETTINGS.request_delay_ms),
-		max_concurrency: Number(settings.max_concurrency ?? DEFAULT_CRAWL_SETTINGS.max_concurrency)
+		max_concurrency: Number(settings.max_concurrency ?? DEFAULT_CRAWL_SETTINGS.max_concurrency),
+		render_js: settings.render_js ?? DEFAULT_CRAWL_SETTINGS.render_js
 	};
 };
 

@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
 from open_webui.models.chat_widget_crawl import ChatWidgetCrawlItems, ChatWidgetCrawlRuns, ChatWidgetCrawlSettings
 from open_webui.utils.widget_crawl_fetch import CrawlFetcher
+from open_webui.utils.widget_crawl_render import CrawlRenderer, needs_rendering
 from open_webui.utils.widget_crawl_urls import (
     HTML_CONTENT_TYPES,
     KEEP_RUNS_PER_WIDGET,
@@ -181,6 +182,7 @@ class WidgetCrawler:
         self.phase = 'starting'
         self.queued = 0
         self.fetcher: Optional[CrawlFetcher] = None
+        self.renderer: Optional[CrawlRenderer] = None
 
     @property
     def progress(self) -> dict:
@@ -197,6 +199,8 @@ class WidgetCrawler:
             'queued': self.queued,
             'bytes_downloaded': self.bytes_downloaded,
             'limit_reached': self.limit_reached,
+            'rendered': self.renderer.pages_rendered if self.renderer else 0,
+            'render_error': self.renderer.error if self.renderer else None,
         }
 
     def check_cancel(self) -> None:
@@ -213,8 +217,12 @@ class WidgetCrawler:
             self.limit_reached = name
 
     async def crawl(self) -> None:
-        async with CrawlFetcher(self.settings.request_timeout) as fetcher:
+        async with (
+            CrawlFetcher(self.settings.request_timeout) as fetcher,
+            CrawlRenderer(self.settings.request_timeout) as renderer,
+        ):
             self.fetcher = fetcher
+            self.renderer = renderer
 
             sitemap_entries: list[tuple[str, str]] = []
             if self.settings.follow_sitemap and self.settings.max_depth >= 1:
@@ -440,6 +448,7 @@ class WidgetCrawler:
 
         html = decode_html(result.body, result.content_type)
         page = await asyncio.to_thread(parse_html_page, html, final_url)
+        page = await self.render_if_needed(html, page, final_url)
 
         if page.canonical and page.canonical != final_url and is_same_site(page.canonical, final_url):
             if page.canonical in self.seen:
@@ -467,6 +476,47 @@ class WidgetCrawler:
             if candidate:
                 candidates.append(candidate)
         return candidates, True
+
+    async def render_if_needed(self, html: str, page: ParsedPage, url: str) -> ParsedPage:
+        """Load client-rendered pages (React, Vite, Vue...) in a browser; keep the plain HTML result otherwise."""
+        if not needs_rendering(self.settings.render_js, html, page.text):
+            return page
+
+        bytes_before = self.renderer.bytes_downloaded
+        rendered = await self.renderer.render(url)
+        self.bytes_downloaded += self.renderer.bytes_downloaded - bytes_before
+        if rendered.status != 'ok':
+            if rendered.status != 'unavailable':
+                log.info(
+                    'Widget crawl %s: rendering %s failed (%s) %s',
+                    self.run_id,
+                    url,
+                    rendered.status,
+                    rendered.error or '',
+                )
+            # The shell's canonical is the same for every route (see below), so it is not this page's.
+            return ParsedPage(title=page.title, canonical=None, links=page.links, text=page.text)
+
+        rendered_page = await asyncio.to_thread(parse_html_page, rendered.html, url)
+        log.debug(
+            'Widget crawl %s: rendered %s (%d -> %d chars)', self.run_id, url, len(page.text), len(rendered_page.text)
+        )
+
+        # A SPA serves the same index.html for every route, often with one fixed canonical URL. If the
+        # app did not change it, it is not this page's canonical and would merge every page into one.
+        canonical = rendered_page.canonical
+        if canonical and canonical == page.canonical:
+            canonical = None
+
+        links = list(rendered_page.links)
+        known = {link.url for link in links}
+        links.extend(link for link in page.links if link.url not in known)
+        return ParsedPage(
+            title=rendered_page.title or page.title,
+            canonical=canonical,
+            links=links,
+            text=rendered_page.text if len(rendered_page.text) >= len(page.text) else page.text,
+        )
 
     async def probe_files(self) -> None:
         semaphore = asyncio.Semaphore(self.settings.max_concurrency)

@@ -282,7 +282,9 @@ class KnowledgeSync:
         if item.kind == 'page':
             text = (item.content_text or '').strip()
             if len(text) < MIN_PAGE_TEXT_CHARS:
-                raise SyncItemSkipped('no_text', NO_TEXT_MESSAGE, True)
+                render_error = (self.run.progress or {}).get('render_error')
+                message = f'{NO_TEXT_MESSAGE}. {render_error}' if render_error else NO_TEXT_MESSAGE
+                raise SyncItemSkipped('no_text', message[:1000], True)
             title = item.title or item.url
             document = f'Title: {title}\nURL: {item.url}\n\n{text}'
             return f'{slugify(title)}.txt', 'text/plain', document.encode('utf-8')
