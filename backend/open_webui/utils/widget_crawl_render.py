@@ -38,6 +38,9 @@ MAX_RESOURCE_BYTES = 20 * 1024 * 1024
 # After the DOM is ready, how long to wait for the app to fetch its data and render.
 MAX_SETTLE_MS = 8000
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+# Every page of an app loads the same bundles; keep them for the whole run instead of per page.
+CACHED_RESOURCE_TYPES = {'script', 'stylesheet'}
+MAX_CACHE_BYTES = 100 * 1024 * 1024
 BROWSER_CHANNELS = (None, 'chrome', 'msedge')
 
 UNAVAILABLE_MESSAGE = (
@@ -72,6 +75,7 @@ class RenderResult:
     http_status: Optional[int] = None
     html: str = ''
     error: Optional[str] = None
+    bytes_downloaded: int = 0
 
 
 class CrawlRenderer:
@@ -89,6 +93,8 @@ class CrawlRenderer:
         self._playwright = None
         self._browser = None
         self._session: Optional[aiohttp.ClientSession] = None
+        self._cache: dict[str, tuple[int, dict, bytes]] = {}
+        self._cache_bytes = 0
 
     async def __aenter__(self) -> 'CrawlRenderer':
         return self
@@ -157,9 +163,11 @@ class CrawlRenderer:
             return RenderResult(url=url, status='unavailable', error=self.error)
 
         context = await self._browser.new_context(java_script_enabled=True, service_workers='block')
+        # Pages render in parallel, so each counts its own downloads.
+        downloaded = [0]
         try:
             page = await context.new_page()
-            await page.route('**/*', self._intercept)
+            await page.route('**/*', lambda route: self._intercept(route, downloaded))
             await page.route_web_socket('**/*', lambda ws_route: ws_route.close())
 
             try:
@@ -177,7 +185,9 @@ class CrawlRenderer:
             await self._settle(page)
             html = await page.content()
             self.pages_rendered += 1
-            return RenderResult(url=page.url, status='ok', http_status=response.status, html=html)
+            return RenderResult(
+                url=page.url, status='ok', http_status=response.status, html=html, bytes_downloaded=downloaded[0]
+            )
         except Exception as e:
             return RenderResult(url=url, status='failed', error=str(e)[:500])
         finally:
@@ -202,10 +212,17 @@ class CrawlRenderer:
         except Exception:
             pass
 
-    async def _intercept(self, route) -> None:
+    async def _intercept(self, route, downloaded: list[int]) -> None:
         request = route.request
         if request.resource_type in BLOCKED_RESOURCE_TYPES or not request.url.startswith(('http://', 'https://')):
             await route.abort()
+            return
+
+        cacheable = request.method == 'GET' and request.resource_type in CACHED_RESOURCE_TYPES
+        cached = self._cache.get(request.url) if cacheable else None
+        if cached:
+            status, headers, body = cached
+            await route.fulfill(status=status, headers=headers, body=body)
             return
 
         try:
@@ -237,11 +254,12 @@ class CrawlRenderer:
                         if len(body) > MAX_RESOURCE_BYTES:
                             raise ValueError('Resource too large')
                     self.bytes_downloaded += len(body)
-                    await route.fulfill(
-                        status=response.status,
-                        headers=_fulfillable_response_headers(hop_cookies + list(response.headers.items())),
-                        body=bytes(body),
-                    )
+                    downloaded[0] += len(body)
+                    fulfilled_headers = _fulfillable_response_headers(hop_cookies + list(response.headers.items()))
+                    if cacheable and response.status == 200 and self._cache_bytes + len(body) <= MAX_CACHE_BYTES:
+                        self._cache[request.url] = (response.status, fulfilled_headers, bytes(body))
+                        self._cache_bytes += len(body)
+                    await route.fulfill(status=response.status, headers=fulfilled_headers, body=bytes(body))
                     return
             raise ValueError('Too many redirects')
         except Exception as e:

@@ -482,9 +482,8 @@ class WidgetCrawler:
         if not needs_rendering(self.settings.render_js, html, page.text):
             return page
 
-        bytes_before = self.renderer.bytes_downloaded
         rendered = await self.renderer.render(url)
-        self.bytes_downloaded += self.renderer.bytes_downloaded - bytes_before
+        self.bytes_downloaded += rendered.bytes_downloaded
         if rendered.status != 'ok':
             if rendered.status != 'unavailable':
                 log.info(
