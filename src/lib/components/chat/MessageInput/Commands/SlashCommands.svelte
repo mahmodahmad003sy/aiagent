@@ -3,11 +3,25 @@
 	import { getContext, onDestroy } from 'svelte';
 	import { getPrompts } from '$lib/apis/prompts';
 	import { getSkillItems } from '$lib/apis/skills';
+	import {
+		listTerminalSkills,
+		resolveTerminalConnection,
+		type TerminalSkill
+	} from '$lib/apis/terminal';
+	import {
+		user,
+		chatId,
+		selectedTerminalId,
+		settings,
+		terminalServers,
+		terminalSkills
+	} from '$lib/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ChatBubbleDotted from '$lib/components/icons/ChatBubbleDotted.svelte';
 	import ChatBubbleDottedChecked from '$lib/components/icons/ChatBubbleDottedChecked.svelte';
 	import Cube from '$lib/components/icons/Cube.svelte';
 	import Knobs from '$lib/components/icons/Knobs.svelte';
+	import Plus from '$lib/components/icons/Plus.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 
 	const i18n: any = getContext('i18n');
@@ -15,12 +29,14 @@
 	export let query = '';
 	export let onSelect = (e) => {};
 	export let canCompact = false;
+	export let canCompare = false;
 	export let compactDisabled = false;
 	export let canStatus = false;
 	export let canFork = false;
 	export let forkDisabled = false;
 	export let canTemporary = false;
 	export let temporaryEnabled = false;
+	export let hasChatContent = false;
 	export let contextPercent = 0;
 	export let contextHasThreshold = false;
 
@@ -54,6 +70,14 @@
 			: []),
 		...('settings'.startsWith(query.toLowerCase())
 			? [{ type: 'command', data: { id: 'settings' } }]
+			: []),
+		...(canCompare && 'compare'.startsWith(query.toLowerCase())
+			? [{ type: 'command', data: { id: 'compare' } }]
+			: []),
+		...(hasChatContent &&
+		($user?.role === 'admin' || $user?.permissions?.workspace?.skills) &&
+		'skills:create'.startsWith(query.toLowerCase())
+			? [{ type: 'command', data: { id: 'skills:create' } }]
 			: [])
 	];
 
@@ -84,17 +108,33 @@
 		clearTimeout(searchDebounceTimer);
 	});
 
+	const getTerminalItems = async (query = ''): Promise<TerminalSkill[]> => {
+		const connection = resolveTerminalConnection(
+			$selectedTerminalId,
+			$terminalServers ?? [],
+			$settings?.terminalServers ?? [],
+			localStorage.token
+		);
+		const items = await listTerminalSkills(connection, $chatId || null).catch(() => []);
+		terminalSkills.set(items);
+		const q = query.trim().toLowerCase();
+		return q
+			? items.filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(q))
+			: items;
+	};
+
 	const getItems = async () => {
-		const [promptRes, skillRes] = await Promise.all([
+		const [promptRes, skillRes, terminalItems] = await Promise.all([
 			getPrompts(localStorage.token).catch(() => null),
-			getSkillItems(localStorage.token, query).catch(() => null)
+			getSkillItems(localStorage.token, query).catch(() => null),
+			getTerminalItems(query)
 		]);
 
 		if (promptRes) {
 			prompts = promptRes;
 		}
 
-		skills = skillRes?.items ?? [];
+		skills = [...(skillRes?.items ?? []), ...terminalItems];
 	};
 
 	export const selectUp = () => {
@@ -347,6 +387,67 @@
 					</span>
 				</button>
 			</Tooltip>
+		{:else if item.data.id === 'compare'}
+			<button
+				type="button"
+				aria-label={$i18n.t('Compare text')}
+				class="slash-command-row flex items-center gap-2 w-full h-6 px-2 rounded-xl text-xs text-left transition-colors duration-75
+					{commandIdx === selectedIdx ? 'app-interactive-active' : ''}"
+				on:mousedown={(e) => e.preventDefault()}
+				on:click={() => onSelect(item)}
+				on:mouseenter={() => (selectedIdx = commandIdx)}
+				on:focus={() => {}}
+				data-selected={commandIdx === selectedIdx}
+			>
+				<span class="app-icon-muted flex items-center justify-center w-4 shrink-0">
+					<svg
+						class="size-3.5"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<rect x="3" y="4" width="18" height="16" rx="2" />
+						<path d="M12 4v16M5.5 12h4M14.5 12h4M16.5 10v4" />
+					</svg>
+				</span>
+				<span class="flex-1 min-w-0 flex items-baseline gap-1.5 overflow-hidden">
+					<span class="truncate">{$i18n.t('Compare text')}</span>
+					<span class="app-muted text-[0.625rem] truncate shrink-0">/compare</span>
+				</span>
+			</button>
+		{:else if item.data.id === 'skills:create'}
+			<Tooltip
+				content={$i18n.t('Create a reusable terminal skill from this chat.')}
+				placement="top"
+			>
+				<button
+					type="button"
+					aria-label={$i18n.t('Create skill: create a reusable terminal skill from this chat.')}
+					class="slash-command-row flex items-center gap-2 w-full h-6 px-2 rounded-xl text-xs text-left transition-colors duration-75
+						{commandIdx === selectedIdx ? 'app-interactive-active' : ''}"
+					on:mousedown={(e) => e.preventDefault()}
+					on:click={() => {
+						onSelect(item);
+					}}
+					on:mouseenter={() => {
+						selectedIdx = commandIdx;
+					}}
+					on:focus={() => {}}
+					data-selected={commandIdx === selectedIdx}
+				>
+					<span class="app-icon-muted flex items-center justify-center w-4 shrink-0">
+						<Plus className="size-3.5" />
+					</span>
+					<span class="flex-1 min-w-0 flex items-baseline gap-1.5 overflow-hidden">
+						<span class="truncate">{$i18n.t('Create skill')}</span>
+						<span class="app-muted text-[0.625rem] truncate shrink-0">/skills:create</span>
+					</span>
+				</button>
+			</Tooltip>
 		{:else if item.data.id === 'settings'}
 			<Tooltip content={$i18n.t('Open settings.')} placement="top">
 				<button
@@ -447,7 +548,7 @@
 						{resolveLocalizedResource(skill, $i18n.language)}
 					</div>
 					<div class="ml-2 max-w-24 shrink-0 truncate text-xs text-gray-500 dark:text-gray-400">
-						{skill.id}
+						{skill.source === 'terminal' ? $i18n.t('Terminal') : skill.id}
 					</div>
 				</div>
 			</button>

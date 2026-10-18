@@ -4,11 +4,27 @@
 	import { getContext, onDestroy, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 
-	import { user, tools as _tools, skills as _skills, toolServers } from '$lib/stores';
+	import {
+		chatId,
+		config,
+		selectedTerminalId,
+		settings,
+		terminalServers,
+		terminalSkills,
+		user,
+		tools as _tools,
+		skills as _skills,
+		toolServers
+	} from '$lib/stores';
 
 	import { deleteOAuthSession } from '$lib/apis/auths';
 	import { getTools } from '$lib/apis/tools';
 	import { getSkills } from '$lib/apis/skills';
+	import {
+		listTerminalSkills,
+		resolveTerminalConnection,
+		type TerminalSkill
+	} from '$lib/apis/terminal';
 
 	import { toast } from 'svelte-sonner';
 
@@ -174,6 +190,18 @@
 		}
 	};
 
+	const getTerminalSkillItems = async (): Promise<TerminalSkill[]> => {
+		const connection = resolveTerminalConnection(
+			$selectedTerminalId,
+			$terminalServers ?? [],
+			$settings?.terminalServers ?? [],
+			localStorage.token
+		);
+		const items = await listTerminalSkills(connection, $chatId || null).catch(() => []);
+		terminalSkills.set(items);
+		return items;
+	};
+
 	const loadTools = async (query = toolQuery) => {
 		const requestId = ++toolRequestId;
 		const q = query.trim();
@@ -195,7 +223,9 @@
 			await _skills.set(await getSkills(localStorage.token));
 		}
 		if (requestId !== skillRequestId) return;
-		setSkills($_skills, q);
+		const terminalItems = await getTerminalSkillItems();
+		if (requestId !== skillRequestId) return;
+		setSkills([...($_skills ?? []), ...terminalItems], q);
 	};
 
 	const scheduleToolSearch = () => {
@@ -251,6 +281,9 @@
 			selectedSkillIds = selectedSkillIds.filter((id) => id !== skillId);
 		}
 	};
+
+	const skillSourceLabel = (skill: IntegrationItem | undefined) =>
+		skill?.source === 'terminal' ? $i18n.t('Terminal') : '';
 
 	onDestroy(() => {
 		clearTimeout(toolSearchDebounceTimer);
@@ -416,6 +449,10 @@
 								aria-pressed={webSearchEnabled}
 								on:click={() => {
 									webSearchEnabled = !webSearchEnabled;
+									// Left open, this menu would swallow the first click on the confirmation dialog
+									if (webSearchEnabled && $config?.features?.enable_web_search_confirmation) {
+										show = false;
+									}
 									onWebSearchToggle(webSearchEnabled);
 								}}
 							>
@@ -680,6 +717,11 @@
 														{resolveLocalizedResource(skills?.[skillId], $i18n.language, 'name')}
 													</div>
 												</Tooltip>
+												{#if skillSourceLabel(skills?.[skillId])}
+													<div class="shrink-0 text-[0.6875rem] text-gray-500 dark:text-gray-400">
+														{skillSourceLabel(skills?.[skillId])}
+													</div>
+												{/if}
 											</div>
 										</div>
 

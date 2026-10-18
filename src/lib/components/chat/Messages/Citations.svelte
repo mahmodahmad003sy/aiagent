@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { embed, showControls, showEmbeds } from '$lib/stores';
+	import { isValidHttpUrl } from '$lib/utils';
 
 	import CitationModal from './Citations/CitationModal.svelte';
 
@@ -43,7 +44,11 @@
 
 			if (citations[index]?.source?.embed_url) {
 				const embedUrl = citations[index].source.embed_url;
-				if (embedUrl) {
+				// The embed panel renders anything it cannot read as a URL as raw HTML
+				if (
+					typeof embedUrl === 'string' &&
+					(isValidHttpUrl(embedUrl) || embedUrl.startsWith('//'))
+				) {
 					if (readOnly) {
 						// Open in new tab if readOnly
 						window.open(embedUrl, '_blank');
@@ -119,7 +124,7 @@
 				}
 
 				if (id.startsWith('http://') || id.startsWith('https://')) {
-					_source = { ..._source, name: id, url: id };
+					_source = { ..._source, name: metadata?.external ? _source.name : id, url: id };
 				}
 
 				const existingSource = acc.find((item) => item.id === id);

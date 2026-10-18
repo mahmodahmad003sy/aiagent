@@ -1,3 +1,5 @@
+import type { ModelControl } from '$lib/apis';
+
 type LocaleEntry = Record<string, any>;
 type LocalizedMap = Record<string, LocaleEntry>;
 
@@ -117,6 +119,43 @@ export const valveTranslationSource = (schema: any, prefix: string): Record<stri
 	return strings;
 };
 
+export const modelControlTranslationSource = (
+	controls: Record<string, ModelControl> = {}
+): Record<string, string> => {
+	const strings: Record<string, string> = {};
+	for (const [key, control] of Object.entries(controls)) {
+		strings[`model_controls.${key}.label`] = control.label;
+		if (control.description) strings[`model_controls.${key}.description`] = control.description;
+		for (const [value, option] of Object.entries(control.options)) {
+			strings[`model_controls.${key}.options.${value}.label`] = option.label;
+		}
+	}
+	return strings;
+};
+
+export const localizeModelControls = (model: any, locale: string): Record<string, ModelControl> => {
+	const translate = (value: string | undefined, key: string) =>
+		resolveLocalizedString(value, model?.info?.meta?.i18n, locale, `model_controls.${key}`);
+	return Object.fromEntries(
+		Object.entries<ModelControl>(model?.info?.params?.model_controls ?? {}).map(
+			([key, control]) => [
+				key,
+				{
+					...control,
+					label: translate(control.label, `${key}.label`),
+					description: translate(control.description, `${key}.description`),
+					options: Object.fromEntries(
+						Object.entries(control.options).map(([value, option]) => [
+							value,
+							{ ...option, label: translate(option.label, `${key}.options.${value}.label`) }
+						])
+					)
+				}
+			]
+		)
+	);
+};
+
 export const resolveLocalizedModelName = (model: any, locale?: string | null) => {
 	const meta = model?.info?.meta ?? model?.meta;
 	const info = model?.info ?? model;
@@ -131,14 +170,50 @@ export const resolveLocalizedModelDescription = (model: any, locale?: string | n
 export const resolveLocalizedPromptSuggestions = (
 	fallback: PromptSuggestion[] | null | undefined,
 	i18n: LocalizedMap | null | undefined,
-	locale?: string | null
+	locale?: string | null,
+	t: (key: string) => string = (key) => key
 ) => {
 	for (const candidate of getLocaleCandidates(locale)) {
 		const prompts = i18n?.[candidate]?.suggestion_prompts ?? i18n?.[candidate];
 		if (Array.isArray(prompts)) return prompts;
 	}
 
-	return fallback ?? [];
+	return (
+		fallback ?? [
+			{
+				title: [t('Help me study'), t('vocabulary for a college entrance exam')],
+				content: t(
+					"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option."
+				)
+			},
+			{
+				title: [t('Give me ideas'), t("for what to do with my kids' art")],
+				content: t(
+					"What are 5 creative things I could do with my kids' art? I don't want to throw them away, but it's also so much clutter."
+				)
+			},
+			{
+				title: [t('Tell me a fun fact'), t('about the Roman Empire')],
+				content: t('Tell me a random fun fact about the Roman Empire')
+			},
+			{
+				title: [t('Show me a code snippet'), t("of a website's sticky header")],
+				content: t("Show me a code snippet of a website's sticky header in CSS and JavaScript.")
+			},
+			{
+				title: [t('Explain options trading'), t("if I'm familiar with buying and selling stocks")],
+				content: t(
+					"Explain options trading in simple terms if I'm familiar with buying and selling stocks."
+				)
+			},
+			{
+				title: [t('Overcome procrastination'), t('give me tips')],
+				content: t(
+					'Could you start by asking me about instances when I procrastinate the most and then give me some suggestions to overcome it?'
+				)
+			}
+		]
+	);
 };
 
 export const resolveLocalizedModelPromptSuggestions = (model: any, locale?: string | null) => {
