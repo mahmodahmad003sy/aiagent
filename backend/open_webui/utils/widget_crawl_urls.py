@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
@@ -184,6 +185,16 @@ def path_allowed(url: str, include_paths: list[str], exclude_paths: list[str]) -
 def slugify(value: str, max_length: int = 80) -> str:
     value = re.sub(r'[^\w.-]+', '-', value or '').strip('-._')
     return value[:max_length].rstrip('-._') or 'item'
+
+
+def page_document_filename(title: str, url: str) -> str:
+    """Return a readable, stable filename that uniquely identifies a crawled page."""
+    parts = urlsplit(url)
+    route = unquote(parts.path).strip('/').replace('/', '-') or 'home'
+    if parts.query:
+        route = f'{route}-{unquote(parts.query)}'
+    url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()[:10]
+    return f'{slugify(title, 60)}-{slugify(route, 40)}-{url_hash}.txt'
 
 
 def human_size(size: int | None) -> str:

@@ -29,6 +29,7 @@ from open_webui.utils.widget_crawl_urls import (
     FILE_TYPE_TO_CONTENT_TYPE,
     MIN_PAGE_TEXT_CHARS,
     CrawlCancelled,
+    page_document_filename,
     render_resource_text,
     slugify,
     url_file_name,
@@ -256,12 +257,14 @@ class KnowledgeSync:
             return skipped.outcome, skipped.message
 
         content_hash = hashlib.sha256(data).hexdigest()
-        if (
-            existing
-            and existing.content_hash == content_hash
-            and await Knowledges.has_file(knowledge_id, existing.file_id)
-        ):
-            return 'unchanged', None
+        if existing and existing.content_hash == content_hash:
+            existing_file = await Files.get_file_by_id(existing.file_id)
+            if (
+                existing_file
+                and existing_file.filename == filename
+                and await Knowledges.has_file(knowledge_id, existing.file_id)
+            ):
+                return 'unchanged', None
 
         file_id, outcome, error = await add_document_to_knowledge(
             self.request, self.owner, knowledge_id, self.widget.id, item, filename, content_type, data
@@ -287,7 +290,7 @@ class KnowledgeSync:
                 raise SyncItemSkipped('no_text', message[:1000], True)
             title = item.title or item.url
             document = f'Title: {title}\nURL: {item.url}\n\n{text}'
-            return f'{slugify(title)}.txt', 'text/plain', document.encode('utf-8')
+            return page_document_filename(title, item.url), 'text/plain', document.encode('utf-8')
 
         if item.kind == 'resource':
             name = item.name or url_file_name(item.url)

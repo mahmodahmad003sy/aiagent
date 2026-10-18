@@ -147,6 +147,12 @@
 		resource: items.filter((item) => item.kind === 'resource').length,
 		error: items.filter((item) => item.kind === 'error').length
 	};
+	$: pageTitleCounts = items.reduce((counts, item) => {
+		if (item.kind !== 'page') return counts;
+		const title = item.title?.trim();
+		if (title) counts.set(title, (counts.get(title) ?? 0) + 1);
+		return counts;
+	}, new Map<string, number>());
 	$: tabItems = items.filter((item) => item.kind === activeTab);
 	$: searchTerm = search.trim().toLowerCase();
 	$: filteredItems = searchTerm
@@ -170,6 +176,18 @@
 			unit += 1;
 		}
 		return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+	};
+
+	const pageDisplayTitle = (item: CrawlItem) => {
+		const title = item.title?.trim() || item.url;
+		if ((pageTitleCounts.get(title) ?? 0) < 2) return title;
+
+		try {
+			const url = new URL(item.url);
+			return `${title} - ${decodeURIComponent(`${url.pathname}${url.search}`) || '/'}`;
+		} catch {
+			return `${title} - ${item.url}`;
+		}
 	};
 
 	const statusText = (item: CrawlItem) => {
@@ -889,8 +907,8 @@
 													on:change={(event) => toggleItem(item, event.currentTarget.checked)}
 												/>
 											</td>
-											<td class="max-w-64 truncate px-3 py-2" title={item.title ?? ''}>
-												{item.title ?? '—'}
+											<td class="max-w-64 truncate px-3 py-2" title={pageDisplayTitle(item)}>
+												{pageDisplayTitle(item)}
 											</td>
 											<td class="max-w-80 truncate px-3 py-2">
 												<a

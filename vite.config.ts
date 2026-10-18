@@ -1,5 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
@@ -26,6 +26,9 @@ export default defineConfig({
 		sourcemap: true
 	},
 	server: {
+		fs: {
+			allow: [searchForWorkspaceRoot(process.cwd())]
+		},
 		proxy: {
 			'/api': {
 				target: backendTarget,
