@@ -73,6 +73,9 @@
 					{ signal: controller.signal }
 				);
 				if (disposed || !panes[tab.id]) return;
+				if (!tab.loaded) {
+					panes[tab.id].write(`$ ${tab.command.replace(/\r?\n/g, '\r\n')}\r\n`);
+				}
 				if (result.truncated) panes[tab.id].write('\r\n[Earlier output omitted]\r\n');
 				panes[tab.id].write(result.output.map((entry) => entry.data).join(''));
 				tabs = tabs.map((item) =>
@@ -110,6 +113,7 @@
 		tabs = tabs.filter((tab) => tab.id !== id);
 		delete panes[id];
 		if (activeId === id) activeId = shellOpened ? 'shell' : (tabs[0]?.id ?? '');
+		if (!activeId) expanded = false;
 	}
 
 	function closeShell() {
@@ -118,6 +122,7 @@
 		connected = false;
 		connecting = false;
 		activeId = tabs[0]?.id ?? '';
+		if (!activeId) expanded = false;
 	}
 
 	function navigate(event: KeyboardEvent) {
@@ -162,7 +167,7 @@
 	>
 		{#if !expanded}
 			<button
-				on:click={() => (expanded = true)}
+				on:click={() => select(activeId || 'shell')}
 				class="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 text-left hover:text-gray-900 dark:hover:text-gray-100"
 			>
 				<Icon name="terminal" size={13} />
@@ -223,10 +228,11 @@
 							title={`${tab.command} (${!tab.available ? 'Unavailable' : tab.status === 'running' ? 'Running' : `Exit ${tab.exit_code ?? tab.status}`})`}
 						>
 							<span
-								class="h-[5px] w-[5px] shrink-0 rounded-full"
-								class:bg-emerald-500={tab.available && tab.status === 'running'}
-								class:bg-red-400={tab.exit_code !== null && tab.exit_code !== 0}
-								class:bg-gray-400={!tab.available || (tab.status !== 'running' && !tab.exit_code)}
+								aria-hidden="true"
+								class="h-[5px] w-[5px] shrink-0 rounded-full border {tab.available &&
+								tab.status === 'running'
+									? 'border-emerald-500 bg-emerald-500'
+									: 'border-gray-400'}"
 							></span>
 							<span class="max-w-28 truncate">{tab.command}</span>
 						</button>
@@ -242,11 +248,11 @@
 			</div>
 		{/if}
 		<button
-			on:click={() => (expanded = !expanded)}
+			on:click={() => (expanded ? (expanded = false) : select(activeId || 'shell'))}
 			class="tab-button flex h-7 w-7 shrink-0 items-center justify-center"
 			aria-expanded={expanded}
-			title={$i18n.t(expanded ? 'Collapse terminal' : 'Expand terminal')}
-			aria-label={$i18n.t(expanded ? 'Collapse terminal' : 'Expand terminal')}
+			title={expanded ? $i18n.t('Collapse terminal') : $i18n.t('Expand terminal')}
+			aria-label={expanded ? $i18n.t('Collapse terminal') : $i18n.t('Expand terminal')}
 		>
 			<Icon name={expanded ? 'chevron-down' : 'chevron-up'} size={12} />
 		</button>

@@ -14,7 +14,6 @@
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import Connection from './Tools/Connection.svelte';
 	import Terminals from './Integrations/Terminals.svelte';
-	import UserSettingSection from './UserSettingSection.svelte';
 
 	import AddToolServerModal from '$lib/components/AddToolServerModal.svelte';
 
@@ -35,7 +34,6 @@
 	let servers: ToolServerConnection[] | null = null;
 	let terminalServerConfigs: TerminalServerConfig[] = [];
 	let showConnectionModal = false;
-	const helpTextClass = 'text-[0.6875rem] text-gray-400 dark:text-gray-600';
 
 	const addConnectionHandler = async (server: ToolServerConnection) => {
 		servers = [...(servers ?? []), server];
@@ -102,21 +100,28 @@
 		updateHandler();
 	}}
 >
-	<h2 class="text-sm font-medium text-gray-900 dark:text-white mb-4">{$i18n.t('Integrations')}</h2>
+	<h2 class="text-sm font-medium text-gray-900 dark:text-white mb-4">
+		{$i18n.t('settings.personal.tools.title')}
+	</h2>
 
-	<div class="flex-1 min-h-0 overflow-y-auto scrollbar-hover pr-1.5">
+	<div class="flex flex-1 min-h-0 flex-col overflow-y-auto scrollbar-hover pr-1.5">
 		{#if servers !== null}
-			<UserSettingSection title={$i18n.t('Tools')} first>
+			<section aria-labelledby="tool-servers-heading">
 				<div>
-					<div class="mb-2 flex items-center justify-between">
-						<div class="text-xs text-gray-600 dark:text-gray-400">
-							{$i18n.t('External Tool Servers')}
+					<div class="mb-3 flex items-start justify-between gap-3">
+						<div class="min-w-0">
+							<h3 id="tool-servers-heading" class="text-xs text-gray-600 dark:text-gray-400">
+								{$i18n.t('settings.personal.tools.sections.externalToolServers.title')}
+							</h3>
+							<p class="mt-1 text-[0.6875rem] leading-relaxed text-gray-400 dark:text-gray-600">
+								{$i18n.t('settings.personal.tools.addConnection.description')}
+							</p>
 						</div>
 
-						<Tooltip content={$i18n.t('Add Connection')}>
+						<Tooltip content={$i18n.t('settings.personal.tools.addConnection.label')}>
 							<button
-								aria-label={$i18n.t('Add Connection')}
-								class="flex size-6 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-black/5 hover:text-gray-900 dark:text-gray-600 dark:hover:bg-white/5 dark:hover:text-white"
+								aria-label={$i18n.t('settings.personal.tools.addConnection.label')}
+								class="flex size-7 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-black/5 hover:text-gray-900 dark:text-gray-600 dark:hover:bg-white/5 dark:hover:text-white"
 								on:click={() => (showConnectionModal = true)}
 								type="button"
 							>
@@ -140,7 +145,7 @@
 					</div>
 
 					{#if (servers ?? []).length === 0}
-						<div class={helpTextClass}>
+						<div class="text-[0.6875rem] leading-relaxed text-gray-400 dark:text-gray-600">
 							{$i18n.t('No tool server connections configured.')}
 						</div>
 					{/if}
@@ -152,29 +157,9 @@
 						{$i18n.t(
 							'CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.'
 						)}
-						<a
-							class="ml-1 text-gray-500 underline hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-							href="https://github.com/open-webui/openapi-servers"
-							target="_blank">{$i18n.t('Learn more about OpenAPI tool servers.')} ↗</a
-						>
-					</div>
+					</p>
 				</div>
-			</UserSettingSection>
-
-			<UserSettingSection title={$i18n.t('Terminal')}>
-				<Terminals bind:servers={terminalServerConfigs} onChange={() => updateHandler()} />
-
-				<div class="mt-1 {helpTextClass}">
-					{$i18n.t(
-						'Connect to Open Terminal instances to browse files and use them as always-on tools. Only one can be active at a time.'
-					)}
-				</div>
-				<a
-					class="mt-0.5 block text-[0.6875rem] text-gray-500 underline hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-					href="https://github.com/open-webui/open-terminal"
-					target="_blank">{$i18n.t('Learn more about Open Terminal')} ↗</a
-				>
-			</UserSettingSection>
+			</div>
 		{:else}
 			<div class="flex h-full justify-center">
 				<div class="my-auto">
@@ -186,7 +171,7 @@
 
 	<div class="shrink-0 flex justify-end pt-3 text-sm font-normal">
 		<button
-			class="px-3.5 py-1.5 text-sm font-normal bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+			class="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-2.5 text-xs font-normal text-white transition hover:bg-black disabled:opacity-60 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
 			type="submit"
 		>
 			{$i18n.t('Save')}

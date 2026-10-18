@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { TerminalContext } from '$lib/types';
 	import { toast } from 'svelte-sonner';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
@@ -40,6 +41,8 @@
 	export let stopResponse: Function;
 
 	export let autoScroll = false;
+	export let callActive = false;
+	export let callEnabled = true;
 
 	export let atSelectedModel: Model | undefined;
 	export let selectedModels: [''];
@@ -48,6 +51,7 @@
 
 	export let prompt = '';
 	export let files = [];
+	export let terminalContext: TerminalContext | null = null;
 	export let messageInput = null;
 
 	export let selectedToolIds = [];
@@ -85,15 +89,11 @@
 	export let dragged = false;
 
 	let models = [];
-	let selectedModelIdx = 0;
+	export let selectedModelIdx = 0;
 	let selectedModel;
 	let selectedModelName = '';
 	let selectedModelDescription = '';
 	let selectedSuggestionPrompts = [];
-
-	$: if (selectedModels.length > 0) {
-		selectedModelIdx = models.length - 1;
-	}
 
 	$: models = selectedModels.map((id) => $_models.find((m) => m.id === id));
 	$: selectedModel = atSelectedModel ?? models[selectedModelIdx];
@@ -103,16 +103,17 @@
 		resolveLocalizedModelPromptSuggestions(atSelectedModel, $i18n.language) ??
 		resolveLocalizedModelPromptSuggestions(models[selectedModelIdx], $i18n.language) ??
 		resolveLocalizedPromptSuggestions(
-			$config?.default_prompt_suggestions ?? [],
+			$config?.default_prompt_suggestions,
 			$config?.default_prompt_suggestions_i18n ?? {},
-			$i18n.language
+			$i18n.language,
+			(key) => $i18n.t(key)
 		);
 
 	// True when viewing a shared folder the current user doesn't own AND lacks write access
 	$: folderReadOnly =
 		$selectedFolder != null &&
 		$selectedFolder.user_id !== $user?.id &&
-		$selectedFolder.permission !== 'write';
+		!$selectedFolder.write_access;
 </script>
 
 <div class="m-auto w-full max-w-[58rem] px-1 @2xl:px-20 translate-y-6 py-24 text-center">
@@ -241,6 +242,9 @@
 			<div class="text-base font-normal @md:max-w-3xl w-full py-3 {atSelectedModel ? 'mt-2' : ''}">
 				{#if !($selectedFolder && folderReadOnly)}
 					<MessageInput
+						{terminalContext}
+						{callActive}
+						{callEnabled}
 						bind:this={messageInput}
 						{history}
 						bind:selectedModels

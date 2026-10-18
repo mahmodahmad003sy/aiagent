@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	const i18n = getContext('i18n');
+	const i18n = getContext<typeof import('$lib/i18n').default>('i18n');
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
@@ -21,6 +21,11 @@
 
 	let name = webhook.name;
 	let image = webhook.profile_image_url || '';
+
+	// The server decides whether an external avatar host is fetched.
+	$: imageSrc = image.toLowerCase().startsWith('http')
+		? `${WEBUI_API_BASE_URL}/channels/webhooks/${webhook.id}/profile/image`
+		: image;
 
 	// Notify parent when changes occur
 	$: if (name !== webhook.name || image !== (webhook.profile_image_url || '')) {
@@ -90,7 +95,7 @@
 		on:click={onClick}
 	>
 		<img
-			src={image || `${WEBUI_BASE_URL}/static/favicon.png`}
+			src={imageSrc || `${WEBUI_BASE_URL}/static/favicon.png`}
 			class="rounded-full size-8 object-cover flex-shrink-0"
 			alt=""
 		/>
@@ -100,7 +105,9 @@
 			</div>
 			<div class="text-gray-500 text-xs">
 				{$i18n.t('Created on {{date}}', {
-					date: dayjs(webhook.created_at / 1000000).format('MMM D, YYYY')
+					date: dayjs(webhook.created_at / 1000000)
+						.locale($i18n.language)
+						.format('MMM D, YYYY')
 				})}
 				{#if webhook.user?.name}
 					{$i18n.t('by {{name}}', { name: webhook.user.name })}
@@ -124,7 +131,7 @@
 					on:click={() => filesInputElement.click()}
 				>
 					<img
-						src={image || `${WEBUI_BASE_URL}/static/favicon.png`}
+						src={imageSrc || `${WEBUI_BASE_URL}/static/favicon.png`}
 						class="size-8 object-cover"
 						alt=""
 					/>

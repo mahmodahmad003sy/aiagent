@@ -5,11 +5,13 @@ import io
 import logging
 import time
 from collections import Counter
+from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from open_webui.config import DEFAULT_USER_PERMISSIONS
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.events import EVENTS, publish_event
 from open_webui.env import ENABLE_PROFILE_IMAGE_URL_FORWARDING, PROFILE_IMAGE_ALLOWED_MIME_TYPES, STATIC_DIR
@@ -21,6 +23,7 @@ from open_webui.models.chats import Chats
 from open_webui.models.groups import Groups
 from open_webui.models.oauth_sessions import OAuthSessions
 from open_webui.models.users import (
+    InterfaceSettings,
     UserGroupIdsListResponse,
     UserGroupIdsModel,
     UserInfoListResponse,
@@ -36,7 +39,7 @@ from open_webui.models.access_grants import AccessGrants
 from open_webui.models.knowledge import Knowledges
 from open_webui.models.models import Models
 from open_webui.models.tools import Tools
-from open_webui.utils.access_control import get_permissions, has_permission
+from open_webui.utils.access_control import fill_missing_permissions, get_permissions, has_permission
 from open_webui.utils.auth import (
     get_admin_user,
     get_password_hash,
@@ -66,23 +69,6 @@ def merge_user_ui_settings(defaults: dict, settings: dict) -> dict:
             else value
         )
     return merged
-
-
-def strip_default_interface_settings(defaults: dict, settings: dict) -> dict:
-    stripped = {}
-    for key, value in settings.items():
-        if value is None:
-            continue
-
-        default_value = defaults.get(key)
-        if isinstance(default_value, dict) and isinstance(value, dict):
-            nested = strip_default_interface_settings(default_value, value)
-            if nested:
-                stripped[key] = nested
-        elif value != default_value:
-            stripped[key] = value
-
-    return stripped
 
 
 ############################
@@ -183,8 +169,10 @@ async def search_users(
 
 
 @router.get('/groups')
-async def get_user_groups(user=Depends(get_verified_user), db: AsyncSession = Depends(get_async_session)):
-    return await Groups.get_groups_by_member_id(user.id, db=db)
+async def get_user_groups(
+    include_inherited: bool = False, user=Depends(get_verified_user), db: AsyncSession = Depends(get_async_session)
+):
+    return await user_groups_response(user.id, include_inherited, db)
 
 
 ############################
@@ -276,6 +264,7 @@ class FeaturesPermissions(BaseModel):
     api_keys: bool = False
     notes: bool = True
     channels: bool = True
+    encrypted_channels: bool = False
     folders: bool = True
     direct_tool_servers: bool = False
 
@@ -426,7 +415,9 @@ def _calculate_streaks(heatmap: list[dict]) -> dict[str, int]:
 
 @router.get('/default/permissions', response_model=UserPermissions)
 async def get_default_user_permissions(request: Request, user=Depends(get_admin_user)):
-    user_permissions = await Config.get('user.permissions')
+    user_permissions = fill_missing_permissions(
+        deepcopy(await Config.get('user.permissions') or {}), DEFAULT_USER_PERMISSIONS
+    )
     return {
         'workspace': WorkspacePermissions(**user_permissions.get('workspace', {})),
         'sharing': SharingPermissions(**user_permissions.get('sharing', {})),
@@ -502,16 +493,37 @@ async def update_user_settings_by_session_user(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role != 'admin' and not await has_permission(
-        user.id, 'settings.interface', await Config.get('user.permissions')
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
-
     updated_user_settings = form_data.model_dump(exclude_unset=True)
     ui_settings = updated_user_settings.get('ui')
+
+    if isinstance(ui_settings, dict):
+        if user.role != 'admin' and not await has_permission(
+            user.id, 'settings.interface', await Config.get('user.permissions'), db=db
+        ):
+            # Omitted fields are unchanged, so unauthorized Interface fields can be discarded.
+            for key in InterfaceSettings.model_fields:
+                ui_settings.pop(key, None)
+
+        if (
+            user.role != 'admin'
+            and 'system' in ui_settings
+            and (
+                not await has_permission(user.id, 'chat.controls', await Config.get('user.permissions'), db=db)
+                or not await has_permission(user.id, 'chat.system_prompt', await Config.get('user.permissions'), db=db)
+            )
+        ):
+            ui_settings.pop('system', None)
+
+        if (
+            user.role != 'admin'
+            and 'params' in ui_settings
+            and (
+                not await has_permission(user.id, 'chat.controls', await Config.get('user.permissions'), db=db)
+                or not await has_permission(user.id, 'chat.params', await Config.get('user.permissions'), db=db)
+            )
+        ):
+            ui_settings.pop('params', None)
+
     if (
         user.role != 'admin'
         and ui_settings is not None
@@ -522,8 +534,7 @@ async def update_user_settings_by_session_user(
             await Config.get('user.permissions'),
         )
     ):
-        # If the user is not an admin and does not have permission to use tool servers, remove the key
-        updated_user_settings['ui'].pop('toolServers', None)
+        ui_settings.pop('toolServers', None)
 
     ui_notifications = ui_settings.get('notifications') if isinstance(ui_settings, dict) else None
     if (
@@ -541,11 +552,6 @@ async def update_user_settings_by_session_user(
         updated_user_settings.pop('notifications', None)
         if isinstance(ui_notifications, dict):
             ui_notifications.pop('webhook_url', None)
-
-    default_interface_settings = await Config.get('ui.default_interface_settings')
-    ui_settings = updated_user_settings.get('ui')
-    if isinstance(default_interface_settings, dict) and isinstance(ui_settings, dict):
-        updated_user_settings['ui'] = strip_default_interface_settings(default_interface_settings, ui_settings)
 
     user = await Users.update_user_settings_by_id(user.id, updated_user_settings, db=db)
     if user:
@@ -913,6 +919,21 @@ async def get_user_active_status_by_id(
 ############################
 
 
+@router.post('/{user_id}/sessions/revoke', response_model=bool)
+async def revoke_user_sessions(request: Request, user_id: str, session_user=Depends(get_admin_user)):
+    target = await Users.get_user_by_id(user_id)
+    if target is None:
+        raise HTTPException(404, 'User not found.')
+    first_user = await Users.get_first_user()
+    if first_user and first_user.id == user_id and session_user.id != user_id:
+        raise HTTPException(403, detail=ERROR_MESSAGES.ACTION_PROHIBITED)
+    await revoke_user_tokens(request, user_id)
+    await publish_event(
+        request, EVENTS.AUTH_SESSIONS_REVOKED, actor=session_user, subject_id=user_id, subject_type='user'
+    )
+    return True
+
+
 @router.post('/{user_id}/update', response_model=UserModel | None)
 async def update_user_by_id(
     request: Request,
@@ -968,7 +989,9 @@ async def update_user_by_id(
 
             hashed = await get_password_hash(form_data.password)
             if await Auths.update_user_password_by_id(user_id, hashed, db=db):
-                await revoke_user_tokens(request, user_id)
+                from open_webui.socket.main import disconnect_user_sessions
+
+                await disconnect_user_sessions(user_id)
 
         # Build update dict from only the provided fields
         update_data = {}
@@ -1092,9 +1115,12 @@ async def delete_user_by_id(
 
 @router.get('/{user_id}/groups')
 async def get_user_groups_by_id(
-    user_id: str, user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)
+    user_id: str,
+    include_inherited: bool = False,
+    user=Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_session),
 ):
-    return await Groups.get_groups_by_member_id(user_id, db=db)
+    return await user_groups_response(user_id, include_inherited, db)
 
 
 ############################
@@ -1117,7 +1143,7 @@ async def get_user_preview(
         )
 
     # Get all group IDs this user belongs to
-    user_groups = await Groups.get_groups_by_member_id(user_id, db=db)
+    user_groups = await Groups.get_groups_by_member_id(user_id, db=db, include_inherited=True)
     user_group_ids = {g.id for g in user_groups}
 
     all_models = await Models.get_all_models(db=db)
@@ -1173,3 +1199,12 @@ async def get_user_preview(
             'total': len(all_tools),
         },
     }
+
+
+async def user_groups_response(user_id, include_inherited, db):
+    direct = await Groups.get_groups_by_member_id(user_id, db=db)
+    if not include_inherited:
+        return direct
+    direct_ids = {g.id for g in direct}
+    effective = await Groups.get_groups_by_member_id(user_id, db=db, include_inherited=True)
+    return [{**g.model_dump(), 'membership_type': 'direct' if g.id in direct_ids else 'inherited'} for g in effective]

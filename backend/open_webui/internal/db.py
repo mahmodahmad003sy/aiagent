@@ -27,6 +27,7 @@ from open_webui.env import (
     DATABASE_URL,
     ENABLE_DB_MIGRATIONS,
     OPEN_WEBUI_DIR,
+    USE_SLIM,
 )
 from open_webui.utils.json_codec import JSONCodec
 from sqlalchemy import Dialect, MetaData, create_engine, event, types
@@ -133,13 +134,24 @@ class JSONField(types.TypeDecorator):  # TEXT-backed JSON storage
     cache_ok = True
 
     def process_bind_param(self, value: _T | None, dialect: Dialect) -> Any:
-        return JSONCodec.dumps(value) if value is not None else None
+        return JSONCodec.dumps(value, ensure_ascii=False) if value is not None else None
 
     def process_result_value(self, value: _T | None, dialect: Dialect) -> Any:
         return JSONCodec.loads(value) if value is not None else None
 
     def copy(self, **kwargs: Any) -> Self:
         return JSONField(length=self.impl.length)
+
+
+if USE_SLIM:
+    if make_url(DATABASE_URL).get_backend_name() not in ('sqlite', 'postgresql', 'postgres'):
+        raise ValueError(
+            'Slim requires SQLite or PostgreSQL for DATABASE_URL. Use the standard image for other databases.'
+        )
+    if DATABASE_ENABLE_IAM_TOKEN_AUTH:
+        raise ValueError(
+            'AWS RDS IAM authentication requires the standard image. Slim supports PostgreSQL database credentials.'
+        )
 
 
 # Normalize SSL params from the URL once; the sync engine needs them
@@ -253,7 +265,7 @@ def _json_codec_kwargs(kwargs: dict) -> dict:
     Unlike ``JSONField``, those serialize through the engine, which otherwise uses
     stdlib ``json``. With ``ENABLE_ORJSON`` off JSONCodec is stdlib ``json`` anyway.
     """
-    kwargs.setdefault('json_serializer', JSONCodec.dumps)
+    kwargs.setdefault('json_serializer', lambda value: JSONCodec.dumps(value, ensure_ascii=False))
     kwargs.setdefault('json_deserializer', JSONCodec.loads)
     return kwargs
 
@@ -336,15 +348,16 @@ elif 'sqlite' in SQLALCHEMY_DATABASE_URL:
             if compiled is False:
                 return False
             if compiled is None:
-                regex = []
+                segments = ['']
                 escaped = False
                 for char in pattern:
                     if escape and not escaped and char == escape:
                         escaped = True
                         continue
-                    regex.append(
-                        '.*' if not escaped and char == '%' else '.' if not escaped and char == '_' else re.escape(char)
-                    )
+                    if not escaped and char == '%':
+                        segments.append('')
+                    else:
+                        segments[-1] += '.' if not escaped and char == '_' else re.escape(char)
                     escaped = False
                 if escaped:
                     compiled = False
@@ -352,7 +365,11 @@ elif 'sqlite' in SQLALCHEMY_DATABASE_URL:
                         compiled_patterns.clear()
                     compiled_patterns[key] = compiled
                     return False
-                compiled = re.compile(''.join(regex), re.DOTALL)
+                # Atomic groups pin each middle segment to its first match, so '%' never backtracks.
+                regex = segments[0] + ''.join(f'(?>.*?{segment})' for segment in segments[1:-1])
+                if len(segments) > 1:
+                    regex += '.*' + segments[-1]
+                compiled = re.compile(regex, re.DOTALL)
                 if len(compiled_patterns) >= 512:
                     compiled_patterns.clear()
                 compiled_patterns[key] = compiled
