@@ -154,12 +154,14 @@
 						{$i18n.t('Connect to your own OpenAPI compatible external tool servers.')}
 					</div>
 					<div class={helpTextClass}>
-						{$i18n.t(
-							'CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.'
-						)}
-					</p>
+						<p>
+							{$i18n.t(
+								'CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.'
+							)}
+						</p>
+					</div>
 				</div>
-			</div>
+			</section>
 		{:else}
 			<div class="flex h-full justify-center">
 				<div class="my-auto">

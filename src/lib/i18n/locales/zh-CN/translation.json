@@ -214,27 +214,7 @@
 	"Allow Text to Speech": "允许文本转语音",
 	"Allow the AI to delegate tasks to sub-agents. Each sub-agent creates a real chat with full tool access. Uses additional LLM calls.": "允许 AI 将任务委派给子智能体。每个子智能体会创建一个拥有完整工具访问权限的真实对话。会消耗额外的 LLM 调用。",
 	"Allow Tool Call": "允许工具调用",
-<<<<<<< HEAD
-	"Allow User Location": "获取您的位置",
-	"Allow users to access calendar features.": "允许用户使用日程功能。",
-	"Allow users to authenticate with an LDAP directory.": "允许用户通过 LDAP 目录进行身份验证。",
-	"Allow users to authenticate with an OAuth / OIDC provider.": "允许用户通过 OAuth / OIDC 提供商进行身份验证。",
-	"Allow users to configure webhooks from their account.": "允许用户在账号中配置 Webhook。",
-	"Allow users to create accounts through OAuth.": "允许用户通过 OAuth 创建账号。",
-	"Allow users to create and manage notes.": "允许用户创建和管理笔记。",
-	"Allow users to create and run automations.": "允许用户创建和运行自动化任务。",
-	"Allow users to create API keys for programmatic access.": "允许用户创建 API 密钥以进行编程访问。",
-	"Allow users to edit existing images.": "允许用户编辑已有图片。",
-	"Allow users to generate images from prompts.": "允许用户通过提示词生成图片。",
-	"Allow users to organize chats into folders.": "允许用户将对话整理到分组中。",
-	"Allow users to save memories for more personalized responses.": "允许用户保存记忆以获得更个性化的回答。",
-	"Allow users to search the web from chats.": "允许用户在对话中搜索网页。",
-	"Allow users to share chats with the {{APP_NAME}} community.": "允许用户将对话分享到 {{APP_NAME}} 社区。",
-	"Allow users to use channels for shared conversations.": "允许用户使用频道进行共享对话。",
-	"Allow Voice Interruption in Call": "允许语音通话时打断对话",
-=======
 	"Allow trusted-header sign-in without an authenticator": "允许不使用验证器进行可信标头登录",
->>>>>>> aiagent-dev
 	"Allow Web Upload": "允许从网络上传内容",
 	"Already have an account?": "已拥有账号？",
 	"Also bound to {{action}}": "同时绑定到 {{action}}",
@@ -397,16 +377,8 @@
 	"By": "作者",
 	"by {{name}}": "由 {{name}} 提供",
 	"By {{name}}": "由 {{name}} 提供",
-<<<<<<< HEAD
-	"By supporting the project through sponsorship or an enterprise license, you help us stay independent, ship new features faster, improve stability, and grow {{APP_NAME}} for the long haul.": "通过赞助或企业授权支持本项目，帮助我们保持独立、更快地发布新功能、提升稳定性，并长期发展 {{APP_NAME}}。",
-	"Bypass Embedding and Retrieval": "绕过嵌入和检索",
-	"Bypass Web Loader": "绕过网页加载器",
-	"Cache Base Model List": "缓存基础模型列表",
-	"Calendar": "日程",
-=======
 	"By supporting the project through sponsorship or an enterprise license, you help us stay independent, ship new features faster, improve stability, and grow Open WebUI for the long haul.": "通过赞助或企业授权支持本项目，帮助我们保持独立、更快地发布新功能、提升稳定性，并长期发展 Open WebUI。",
 	"Calendar": "日历",
->>>>>>> aiagent-dev
 	"Calendar created": "日程已创建",
 	"Calendar deleted": "日程已删除",
 	"Calendar name": "日程名称",
@@ -655,17 +627,12 @@
 	"Copy Token": "复制令牌",
 	"Copy URL": "复制 URL",
 	"Copying to clipboard was successful!": "成功复制到剪贴板！",
-<<<<<<< HEAD
-	"Copyright (c)": "",
-	"CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.": "为允许 {{APP_NAME}} 发出的请求，提供商必须正确配置 CORS",
-=======
 	"Copyright (c)": "版权所有 ©",
 	"CORS must be properly configured by the provider to allow requests from Open WebUI.": "为允许 Open WebUI 发出的请求，提供商必须正确配置 CORS",
 	"Could not check for updates": "无法检查更新。",
 	"Could not copy to clipboard. Please try again.": "",
 	"Could not determine the upload folder.": "",
 	"Could not load avatar.": "无法加载虚拟形象。",
->>>>>>> aiagent-dev
 	"Could not load release notes.": "无法加载更新日志。",
 	"Could not open comparison. Please try again.": "",
 	"Could not read comments. Download the original file to review them.": "",
@@ -836,11 +803,7 @@
 	"Discover a prompt": "发现更多提示词",
 	"Discover a skill": "",
 	"Discover a tool": "发现更多工具",
-<<<<<<< HEAD
-	"Discover how to use {{APP_NAME}} and seek support from the community.": "了解如何使用 {{APP_NAME}} 并寻求社区支持",
-=======
 	"Discover, download, and explore community skills": "",
->>>>>>> aiagent-dev
 	"Discover, download, and explore custom functions": "发现、下载并探索更多自定义函数",
 	"Discover, download, and explore custom prompts": "发现、下载并探索更多自定义提示词",
 	"Discover, download, and explore custom tools": "发现、下载并探索更多自定义工具",
@@ -1188,20 +1151,7 @@
 	"External connection not found.": "未找到外部连接。",
 	"External Document Loader URL required.": "需要外部文档加载器接口地址",
 	"External Knowledge Source": "外部知识源",
-<<<<<<< HEAD
-	"External Knowledge Sources": "外部知识源",
-	"External reranker endpoint.": "外部重排器端点。",
-	"External service endpoint used to load document content.": "用于加载文档内容的外部服务端点。",
-	"External Task Model": "外部任务模型",
-	"External Tool Servers": "外部工具服务器",
-	"External vectors must be generated with the same embedding model configured in {{APP_NAME}}.": "外部向量必须使用与 {{APP_NAME}} 中配置的相同嵌入模型生成。",
-	"External Web Loader API Key": "外部网页加载器接口密钥",
-	"External Web Loader URL": "外部网页加载器接口地址",
-	"External Web Search API Key": "外部联网搜索接口密钥",
-	"External Web Search URL": "外部联网搜索接口地址",
-=======
 	"External vectors must be generated with the same embedding model configured in Open WebUI.": "外部向量必须使用与 Open WebUI 中配置的相同嵌入模型生成。",
->>>>>>> aiagent-dev
 	"Extract action items from this note.": "从此笔记中提取待办事项。",
 	"Extracted text lines": "提取的文本行",
 	"Extracting text and comparing…": "正在提取文本并对比……",
@@ -1420,11 +1370,7 @@
 	"Help me study": "帮我学习",
 	"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option.": "帮我学习词汇：写一道填空题，我来尝试选择正确选项。",
 	"Help the community discover great models": "帮助社区发现优质模型",
-<<<<<<< HEAD
-	"Help us translate {{APP_NAME}}!": "",
-=======
 	"Help us translate Open WebUI!": "帮我们翻译 Open WebUI！",
->>>>>>> aiagent-dev
 	"Hex Color": "十六进制颜色代码",
 	"Hex Color - Leave empty for default color": "十六进制颜色代码 - 留空使用默认颜色",
 	"Hidden": "已隐藏",
@@ -1645,18 +1591,8 @@
 	"Manage Connections": "管理连接",
 	"Manage Models": "管理模型",
 	"Manage Ollama": "管理 Ollama",
-<<<<<<< HEAD
-	"Manage Ollama API Connections": "管理 Ollama 接口连接",
-	"Manage OpenAI API Connections": "管理 OpenAI 接口连接",
-	"Map LDAP groups to {{APP_NAME}} groups.": "将 LDAP 组映射到 {{APP_NAME}} 组。",
-	"Map OAuth claims to {{APP_NAME}} groups.": "将 OAuth 声明映射到 {{APP_NAME}} 组。",
-	"Map OAuth claims to {{APP_NAME}} roles.": "将 OAuth 声明映射到 {{APP_NAME}} 角色。",
-	"Map workflow node inputs used for image edits.": "映射用于图片编辑的工作流节点输入。",
-	"Map workflow node inputs used for image generation.": "映射用于图片生成的工作流节点输入。",
-=======
 	"Managed by your administrator.": "由您的管理员管理。",
 	"Manifest discovery is recommended. You can also enter app details manually.": "",
->>>>>>> aiagent-dev
 	"Mapped Source": "映射的来源",
 	"March": "三月",
 	"Mark all as read": "标记全部已读",
@@ -1671,13 +1607,7 @@
 	"Maximum of 3 models can be downloaded simultaneously. Please try again later.": "最多可同时下载 3 个模型，请稍后重试。",
 	"May": "五月",
 	"MBR": "成员",
-<<<<<<< HEAD
-	"MCP": "MCP",
-	"MCP support is experimental and its specification changes often, which can lead to incompatibilities. OpenAPI specification support is directly maintained by the {{APP_NAME}} team, making it the more reliable option for compatibility.": "MCP 支持仍处于实验阶段，因其规范变化频繁，可能会出现不兼容的情况。而 OpenAPI 规范由 {{APP_NAME}} 团队维护，在兼容性方面更加可靠。",
-	"Media upload MIME types the content extraction engine may process.": "内容提取引擎可处理的媒体上传 MIME 类型。",
-=======
 	"MCP support is experimental and its specification changes often, which can lead to incompatibilities. OpenAPI specification support is directly maintained by the Open WebUI team, making it the more reliable option for compatibility.": "MCP 支持仍处于实验阶段，因其规范变化频繁，可能会出现不兼容的情况。而 OpenAPI 规范由 Open WebUI 团队维护，在兼容性方面更加可靠。",
->>>>>>> aiagent-dev
 	"Medium": "中",
 	"Member removed successfully": "成员移除成功",
 	"members": "成员",
@@ -1993,17 +1923,9 @@
 	"Open the changelog modal after sign-in when enabled.": "启用后，登录时打开更新日志弹窗。",
 	"Open this link to continue:": "",
 	"Open User Profile Menu": "打开个人资料菜单",
-<<<<<<< HEAD
-	"{{APP_NAME}} can use tools provided by any OpenAPI server.": "{{APP_NAME}} 可使用任何 OpenAPI 服务器提供的工具。",
-	"{{APP_NAME}} uses faster-whisper internally.": "{{APP_NAME}} 使用内置 faster-whisper",
-	"{{APP_NAME}} uses SpeechT5 and CMU Arctic speaker embeddings.": "{{APP_NAME}} 使用 SpeechT5 和 CMU Arctic speaker embedding。",
-	"{{APP_NAME}} version": "{{APP_NAME}} 版本",
-	"{{APP_NAME}} version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "当前 {{APP_NAME}} 版本 (v{{OPEN_WEBUI_VERSION}}) 低于所需的版本 (v{{REQUIRED_VERSION}})",
-=======
 	"Open WebUI can use tools provided by any OpenAPI server.": "Open WebUI 可使用任何 OpenAPI 服务器提供的工具。",
 	"Open WebUI version": "Open WebUI 版本",
 	"Open WebUI version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "当前 Open WebUI 版本 (v{{OPEN_WEBUI_VERSION}}) 低于所需的版本 (v{{REQUIRED_VERSION}})",
->>>>>>> aiagent-dev
 	"OpenAI": "OpenAI",
 	"OpenAI API Base URL": "OpenAI API 接口地址",
 	"OpenAI API Key is required.": "OpenAI 接口密钥是必填项。",
@@ -2041,13 +1963,9 @@
 	"Parameters": "参数",
 	"Parent group": "父级组",
 	"Parent message not found": "未找到父消息",
-<<<<<<< HEAD
-	"Participate in community leaderboards and evaluations! Syncing aggregated usage stats helps drive research and improvements to {{APP_NAME}}. Your privacy is paramount: no message content is ever shared.": "欢迎您参与社区排行榜和评估！同步使用统计数据有助于 {{APP_NAME}} 的研发和改进。您的隐私至关重要：我们绝不会发送任何消息内容。",
-=======
 	"Parent permissions are inherited. Disabling a local permission does not revoke inherited access.": "父级权限会被继承。关闭本地权限不会撤销已继承的访问权限。",
 	"Participants": "",
 	"Participate in community leaderboards and evaluations! Syncing aggregated usage stats helps drive research and improvements to Open WebUI. Your privacy is paramount: no message content is ever shared.": "欢迎您参与社区排行榜和评估！同步使用统计数据有助于 Open WebUI 的研发和改进。您的隐私至关重要：我们绝不会发送任何消息内容。",
->>>>>>> aiagent-dev
 	"Passthrough params": "透传参数",
 	"Password": "密码",
 	"Password updated. Please sign in again.": "密码已更新。请重新登录。",
@@ -2193,14 +2111,9 @@
 	"Reconnected": "已重新连接",
 	"Record": "录音",
 	"Record voice": "录音",
-<<<<<<< HEAD
-	"Redirect URI": "重定向 URI",
-	"Redirecting you to {{APP_NAME}} Community": "正在将您重定向到 {{APP_NAME}} 社区",
-=======
 	"Recover your authenticator": "恢复验证器",
 	"Recovery code": "恢复码",
 	"Redirecting you to Open WebUI Community": "正在将您重定向到 Open WebUI 社区",
->>>>>>> aiagent-dev
 	"Reduces the probability of generating nonsense. A higher value (e.g. 100) will give more diverse answers, while a lower value (e.g. 10) will be more conservative.": "降低生成无意义内容的概率。较高的值（如 100）将生成更多样化的回答，而较低的值（如 10）则更加保守。",
 	"Reference Chats": "引用其他对话",
 	"Refresh": "刷新",
@@ -2413,12 +2326,7 @@
 	"Select dtype": "选择数据类型（Dtype）",
 	"Select Engine": "选择引擎",
 	"Select Filter": "选择过滤器",
-<<<<<<< HEAD
-	"Select how audio is sent to the OpenAI-compatible endpoint.": "选择音频发送到兼容 OpenAI 端点的方式。",
-	"Select how {{APP_NAME}} authenticates with the Jupyter server.": "选择 {{APP_NAME}} 与 Jupyter 服务器的认证方式。",
-=======
 	"Select for Compare": "",
->>>>>>> aiagent-dev
 	"Select how to split message text for TTS requests": "选择消息文本拆分方法，用于 TTS 请求。",
 	"Select Knowledge": "选择知识库",
 	"Select Method": "选择方法",
@@ -4146,13 +4054,8 @@
 	"You do not have permission to send messages in this thread.": "您没有权限在当前主题中发送消息。",
 	"You do not have permission to upload files to this knowledge base.": "您没有权限上传文件到此知识库。",
 	"You do not have permission to upload files.": "您没有上传文件的权限。",
-<<<<<<< HEAD
-	"You do not have permission to upload web content.": "您没有上传文件的权限。",
-	"You have more than 50 users, which often means this workspace is supporting organizational use. {{APP_NAME}} is free to use as-is, with no restrictions or hidden limits, and we want to keep it that way.": "您有超过 50 名用户，这通常意味着此工作区支持组织级使用。{{APP_NAME}} 免费使用，无任何限制或隐藏限制，我们希望保持这样。",
-=======
 	"You do not have permission to upload web content.": "您没有上传网页内容的权限。",
 	"You have more than 50 users, which often means this workspace is supporting organizational use. Open WebUI is free to use as-is, with no restrictions or hidden limits, and we want to keep it that way.": "您有超过 50 名用户，这通常意味着此工作区支持组织级使用。Open WebUI 免费使用，无任何限制或隐藏限制，我们希望保持这样。",
->>>>>>> aiagent-dev
 	"You have no archived conversations.": "没有已归档的对话。",
 	"You have no shared conversations.": "您没有已分享的对话。",
 	"You have shared this chat": "此对话已经分享过",
@@ -4162,14 +4065,10 @@
 	"Your account status is currently pending activation.": "您的账号当前状态为待激活",
 	"Your browser does not support the audio tag.": "您的浏览器不支持播放音频。",
 	"Your browser does not support the video tag.": "您的浏览器不支持播放视频。",
-<<<<<<< HEAD
-	"Your entire contribution will go directly to the plugin developer; {{APP_NAME}} does not take any percentage. However, the chosen funding platform might have its own fees.": "您的全部捐款将直接给到插件开发者，{{APP_NAME}} 不会收取任何分成。但众筹平台可能会有服务费。",
-=======
 	"Your changes in this comparison will be discarded. The original draft will stay unchanged.": "",
 	"Your comparison changes will be discarded. Your prompt will stay unchanged.": "",
 	"Your entire contribution will go directly to the plugin developer; Open WebUI does not take any percentage. However, the chosen funding platform might have its own fees.": "您的全部捐款将直接给到插件开发者，Open WebUI 不会收取任何分成。但众筹平台可能会有服务费。",
 	"Your link is private until you choose who can view it.": "在您选择谁可以查看之前，您的链接是私密的。",
->>>>>>> aiagent-dev
 	"Your message text or inputs": "您的消息文本或输入",
 	"Your query will be sent to the configured web search provider.": "您的查询将发送到配置的网络搜索服务提供商。",
 	"Your unsaved changes will be lost.": "",

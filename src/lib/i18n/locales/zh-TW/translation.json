@@ -205,31 +205,9 @@
 	"Allow Speech to Text": "允許語音轉文字",
 	"Allow Temporary Chat": "允許臨時對話",
 	"Allow Text to Speech": "允許文字轉語音",
-<<<<<<< HEAD
-	"Allow the AI to delegate tasks to sub-agents. Each sub-agent creates a real chat with full tool access. Uses additional LLM calls.": "",
-	"Allow Tool Call": "",
-	"Allow User Location": "允許使用者位置",
-	"Allow users to access calendar features.": "允許使用者使用行事曆功能",
-	"Allow users to authenticate with an LDAP directory.": "允許使用者登入 LDAP 資料庫",
-	"Allow users to authenticate with an OAuth / OIDC provider.": "允許使用者登入 OAuth / OIDC provider",
-	"Allow users to configure webhooks from their account.": "允許使用者設定帳號的 webhooks",
-	"Allow users to create accounts through OAuth.": "允許使用者透過 OAuth 創建帳號",
-	"Allow users to create and manage notes.": "允許使用者新增及管理筆記",
-	"Allow users to create and run automations.": "允許使用者新增和運行自動化行程",
-	"Allow users to create API keys for programmatic access.": "允許使用者創建 API金鑰用於程式存取",
-	"Allow users to edit existing images.": "允許使用者編輯已存在的照片",
-	"Allow users to generate images from prompts.": "允許使用者透過提示詞生成圖片",
-	"Allow users to organize chats into folders.": "允許使用者使用資料夾整理聊天室",
-	"Allow users to save memories for more personalized responses.": "允許使用者儲存記憶用於更加客製化的回覆",
-	"Allow users to search the web from chats.": "允許使用者在聊天室內搜尋網路",
-	"Allow users to share chats with the {{APP_NAME}} community.": "允許使用者分享聊天室內容至{{APP_NAME}}社群",
-	"Allow users to use channels for shared conversations.": "允許使用者使用 頻道 用於共享對話",
-	"Allow Voice Interruption in Call": "允許在通話中打斷語音",
-=======
 	"Allow the AI to delegate tasks to sub-agents. Each sub-agent creates a real chat with full tool access. Uses additional LLM calls.": "允許 AI 將任務委派給子代理。每個子代理都會建立一個具有完整工具存取權限的獨立對話，這將消耗額外的 LLM 呼叫次數。",
 	"Allow Tool Call": "允許工具呼叫",
 	"Allow trusted-header sign-in without an authenticator": "允許不使用驗證器進行受信任標頭登入",
->>>>>>> aiagent-dev
 	"Allow Web Upload": "允許從網路上傳內容",
 	"Already have an account?": "已經有帳號了嗎？",
 	"Also bound to {{action}}": "同時繫結至 {{action}}",
@@ -392,14 +370,7 @@
 	"By": "由",
 	"by {{name}}": "由 {{name}} 提供",
 	"By {{name}}": "由 {{name}} 製作",
-<<<<<<< HEAD
-	"By supporting the project through sponsorship or an enterprise license, you help us stay independent, ship new features faster, improve stability, and grow {{APP_NAME}} for the long haul.": "",
-	"Bypass Embedding and Retrieval": "繞過嵌入與檢索",
-	"Bypass Web Loader": "繞過網頁載入器",
-	"Cache Base Model List": "快取基礎模型清單",
-=======
 	"By supporting the project through sponsorship or an enterprise license, you help us stay independent, ship new features faster, improve stability, and grow Open WebUI for the long haul.": "透過贊助或購買企業授權來支持本專案，能協助我們維持獨立運作、更快速推出新功能、提升穩定性，並讓 Open WebUI 長遠發展。",
->>>>>>> aiagent-dev
 	"Calendar": "日程",
 	"Calendar created": "日程已建立",
 	"Calendar deleted": "日程已刪除",
@@ -648,11 +619,6 @@
 	"Copy Token": "複製使用者身分憑證",
 	"Copy URL": "複製 URL",
 	"Copying to clipboard was successful!": "成功複製到剪貼簿！",
-<<<<<<< HEAD
-	"Copyright (c)": "",
-	"CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.": "CORS 必須由供應商正確設定，以允許來自 {{APP_NAME}} 的請求。",
-	"Could not load release notes.": "",
-=======
 	"Copyright (c)": "版權所有 (c)",
 	"CORS must be properly configured by the provider to allow requests from Open WebUI.": "CORS 必須由供應商正確設定，以允許來自 Open WebUI 的請求。",
 	"Could not check for updates": "無法檢查更新",
@@ -662,7 +628,6 @@
 	"Could not load release notes.": "無法載入版本資訊。",
 	"Could not open comparison. Please try again.": "無法開啟比較，請再試一次。",
 	"Could not read comments. Download the original file to review them.": "",
->>>>>>> aiagent-dev
 	"Could not read file.": "無法讀取檔案。",
 	"Could you start by asking me about instances when I procrastinate the most and then give me some suggestions to overcome it?": "可以先問我哪些情況最容易拖延，然後給我一些克服的建議嗎？",
 	"Couldn't find your language?": "找不到您的語言嗎？",
@@ -830,11 +795,7 @@
 	"Discover a prompt": "發掘提示詞",
 	"Discover a skill": "探索技能",
 	"Discover a tool": "發掘工具",
-<<<<<<< HEAD
-	"Discover how to use {{APP_NAME}} and seek support from the community.": "探索如何使用 {{APP_NAME}} 並從社群尋求支援。",
-=======
 	"Discover, download, and explore community skills": "探索、下載並瀏覽社群技能",
->>>>>>> aiagent-dev
 	"Discover, download, and explore custom functions": "發掘、下載及探索自訂函式",
 	"Discover, download, and explore custom prompts": "發掘、下載及探索自訂提示詞",
 	"Discover, download, and explore custom tools": "發掘、下載及探索自訂工具",
@@ -1133,11 +1094,7 @@
 	"Event": "事件",
 	"Event created": "活動已建立",
 	"Event deleted": "活動已刪除",
-<<<<<<< HEAD
-	"Event names may change as {{APP_NAME}} evolves. Use broad patterns like user.* for integrations that should continue across new related events.": "",
-=======
 	"Event names may change as Open WebUI evolves. Use broad patterns like user.* for integrations that should continue across new related events.": "隨著 Open WebUI 的反覆運算，事件名稱可能會有所變更。若整合需要持續支援新推出的相關事件，請使用如 user.* 等較寬鬆的比對模式。",
->>>>>>> aiagent-dev
 	"Event title": "活動標題",
 	"Event updated": "活動已更新",
 	"Every {{count}} hours_other": "每 {{count}} 小時",
@@ -1183,30 +1140,12 @@
 	"External": "外部",
 	"External connection not found.": "找不到外部連線。",
 	"External Document Loader URL required.": "需要提供外部文件載入器 URL。",
-<<<<<<< HEAD
-	"External Knowledge Source": "",
-	"External Knowledge Sources": "",
-	"External reranker endpoint.": "",
-	"External service endpoint used to load document content.": "",
-	"External Task Model": "外部任務模型",
-	"External Tool Servers": "",
-	"External vectors must be generated with the same embedding model configured in {{APP_NAME}}.": "",
-	"External Web Loader API Key": "外部網頁載入器 API 金鑰",
-	"External Web Loader URL": "外部網頁載入器 URL",
-	"External Web Search API Key": "外部網路搜尋 API 金鑰",
-	"External Web Search URL": "外部網路搜尋 URL",
-	"Extract action items from this note.": "",
-	"Extract images from PDFs so OCR can process image-only pages.": "",
-	"Fade Effect for Streaming Text": "串流文字淡入效果",
-	"Fade streaming text as it arrives.": "",
-=======
 	"External Knowledge Source": "外部知識庫來源",
 	"External vectors must be generated with the same embedding model configured in Open WebUI.": "外部向量必須使用與 Open WebUI 中所設定相同的嵌入模型產生。",
 	"Extract action items from this note.": "從此筆記中擷取待辦事項。",
 	"Extracted text lines": "擷取的文字行數",
 	"Extracting text and comparing…": "正在擷取文字並比較...",
 	"Failed": "失敗",
->>>>>>> aiagent-dev
 	"Failed to add file.": "新增檔案失敗。",
 	"Failed to add members": "新增成員失敗",
 	"Failed to archive chat.": "封存對話失敗。",
@@ -1421,11 +1360,7 @@
 	"Help me study": "幫我學習",
 	"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option.": "幫我學習詞彙：寫一個填空句子，讓我選出正確的選項。",
 	"Help the community discover great models": "協助社群發現優質模型",
-<<<<<<< HEAD
-	"Help us translate {{APP_NAME}}!": "",
-=======
 	"Help us translate Open WebUI!": "協助我們翻譯 Open WebUI！",
->>>>>>> aiagent-dev
 	"Hex Color": "Hex 顏色",
 	"Hex Color - Leave empty for default color": "Hex 顏色 —— 留空以使用預設顏色",
 	"Hidden": "已隱藏",
@@ -1636,13 +1571,8 @@
 	"Lost": "落敗",
 	"Low": "低",
 	"LTR": "從左到右",
-<<<<<<< HEAD
-	"Made by {{APP_NAME}} Community": "由 {{APP_NAME}} 社群製作",
-	"Make Default": "",
-=======
 	"Made by Open WebUI Community": "由 Open WebUI 社群製作",
 	"Make Default": "設為預設",
->>>>>>> aiagent-dev
 	"Make password visible in the user interface": "在使用者介面中顯示密碼",
 	"Make Private": "設為私人",
 	"Make Public": "設為公開",
@@ -1651,20 +1581,9 @@
 	"Manage Connections": "管理連線",
 	"Manage Models": "管理模型",
 	"Manage Ollama": "管理 Ollama",
-<<<<<<< HEAD
-	"Manage Ollama API Connections": "管理 Ollama API 連線",
-	"Manage OpenAI API Connections": "管理 OpenAI API 連線",
-	"Map LDAP groups to {{APP_NAME}} groups.": "",
-	"Map OAuth claims to {{APP_NAME}} groups.": "",
-	"Map OAuth claims to {{APP_NAME}} roles.": "",
-	"Map workflow node inputs used for image edits.": "",
-	"Map workflow node inputs used for image generation.": "",
-	"Mapped Source": "",
-=======
 	"Managed by your administrator.": "由您的管理員管理。",
 	"Manifest discovery is recommended. You can also enter app details manually.": "建議使用資訊清單自動探索，您也可以手動輸入應用程式詳細資料。",
 	"Mapped Source": "已對應來源",
->>>>>>> aiagent-dev
 	"March": "3 月",
 	"Mark all as read": "全部標示為已讀取",
 	"Mark as unread": "標示為未讀取",
@@ -1678,13 +1597,7 @@
 	"Maximum of 3 models can be downloaded simultaneously. Please try again later.": "最多同時下載 3 個模型。請稍後再試。",
 	"May": "5 月",
 	"MBR": "成員",
-<<<<<<< HEAD
-	"MCP": "MCP",
-	"MCP support is experimental and its specification changes often, which can lead to incompatibilities. OpenAPI specification support is directly maintained by the {{APP_NAME}} team, making it the more reliable option for compatibility.": "MCP 支援為實驗性功能，其規範經常變更，可能導致不相容問題。OpenAPI 規範支援直接由 {{APP_NAME}} 團隊維護，是相容性更可靠的選擇。",
-	"Media upload MIME types the content extraction engine may process.": "",
-=======
 	"MCP support is experimental and its specification changes often, which can lead to incompatibilities. OpenAPI specification support is directly maintained by the Open WebUI team, making it the more reliable option for compatibility.": "MCP 支援為實驗性功能，其規範經常變更，可能導致不相容問題。OpenAPI 規範支援直接由 Open WebUI 團隊維護，是相容性更可靠的選擇。",
->>>>>>> aiagent-dev
 	"Medium": "中",
 	"Member removed successfully": "成功移除成員",
 	"members": "成員",
@@ -2000,17 +1913,9 @@
 	"Open the changelog modal after sign-in when enabled.": "啟用時，在登入後開啟更新日誌視窗。",
 	"Open this link to continue:": "開啟此連結以繼續：",
 	"Open User Profile Menu": "開啟個人資料選單",
-<<<<<<< HEAD
-	"{{APP_NAME}} can use tools provided by any OpenAPI server.": "{{APP_NAME}} 可使用任何 OpenAPI 伺服器提供的工具。",
-	"{{APP_NAME}} uses faster-whisper internally.": "{{APP_NAME}} 使用內部 faster-whisper。",
-	"{{APP_NAME}} uses SpeechT5 and CMU Arctic speaker embeddings.": "{{APP_NAME}} 使用 SpeechT5 和 CMU Arctic 說話者嵌入。",
-	"{{APP_NAME}} version": "{{APP_NAME}} 版本",
-	"{{APP_NAME}} version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "{{APP_NAME}} 版本 (v{{OPEN_WEBUI_VERSION}}) 低於所需版本 (v{{REQUIRED_VERSION}})",
-=======
 	"Open WebUI can use tools provided by any OpenAPI server.": "Open WebUI 可使用任何 OpenAPI 伺服器提供的工具。",
 	"Open WebUI version": "Open WebUI 版本",
 	"Open WebUI version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "Open WebUI 版本 (v{{OPEN_WEBUI_VERSION}}) 低於所需版本 (v{{REQUIRED_VERSION}})",
->>>>>>> aiagent-dev
 	"OpenAI": "OpenAI",
 	"OpenAI API Base URL": "OpenAI API 基礎 URL",
 	"OpenAI API Key is required.": "需要提供 OpenAI API 金鑰。",
@@ -2048,15 +1953,10 @@
 	"Parameters": "參數",
 	"Parent group": "父群組",
 	"Parent message not found": "未找到父訊息",
-<<<<<<< HEAD
-	"Participate in community leaderboards and evaluations! Syncing aggregated usage stats helps drive research and improvements to {{APP_NAME}}. Your privacy is paramount: no message content is ever shared.": "參與社群排行榜和評估！同步聚合的使用統計資料有助於推動 {{APP_NAME}} 的研究和改進。您的隱私至關重要：絕不會分享訊息內容。",
-	"Passthrough params": "",
-=======
 	"Parent permissions are inherited. Disabling a local permission does not revoke inherited access.": "父群組權限會被繼承。停用本機權限不會撤銷已繼承的存取權。",
 	"Participants": "",
 	"Participate in community leaderboards and evaluations! Syncing aggregated usage stats helps drive research and improvements to Open WebUI. Your privacy is paramount: no message content is ever shared.": "參與社群排行榜和評估！同步聚合的使用統計資料有助於推動 Open WebUI 的研究和改進。您的隱私至關重要：絕不會分享訊息內容。",
 	"Passthrough params": "直通參數",
->>>>>>> aiagent-dev
 	"Password": "密碼",
 	"Password updated. Please sign in again.": "密碼已更新。請重新登入。",
 	"Passwords do not match.": "兩次輸入的密碼不一致。",
@@ -2201,14 +2101,9 @@
 	"Reconnected": "已重新連線",
 	"Record": "錄製",
 	"Record voice": "錄音",
-<<<<<<< HEAD
-	"Redirect URI": "",
-	"Redirecting you to {{APP_NAME}} Community": "正在將您重導向至 {{APP_NAME}} 社群",
-=======
 	"Recover your authenticator": "復原驗證器",
 	"Recovery code": "復原碼",
 	"Redirecting you to Open WebUI Community": "正在將您重導向至 Open WebUI 社群",
->>>>>>> aiagent-dev
 	"Reduces the probability of generating nonsense. A higher value (e.g. 100) will give more diverse answers, while a lower value (e.g. 10) will be more conservative.": "降低產生無意義內容的機率。較高的值（例如：100）會產生更多樣化的答案，而較低的值（例如：10）會更保守。",
 	"Reference Chats": "引用其他對話",
 	"Refresh": "重新整理",
@@ -2308,11 +2203,7 @@
 	"Run Now": "立即執行",
 	"Run tools without asking for approval.": "直接執行工具而不請求核准。",
 	"Running": "正在執行",
-<<<<<<< HEAD
-	"Running {{APP_NAME}} for a team?": "",
-=======
 	"Running Open WebUI for a team?": "正在為團隊執行 Open WebUI 嗎？",
->>>>>>> aiagent-dev
 	"Running...": "正在執行...",
 	"runs": "次執行",
 	"Runs": "執行次數",
@@ -2421,14 +2312,8 @@
 	"Select an output format": "選擇輸出格式",
 	"Select dtype": "選擇資料類型（Dtype）",
 	"Select Engine": "選擇引擎",
-<<<<<<< HEAD
-	"Select Filter": "",
-	"Select how audio is sent to the OpenAI-compatible endpoint.": "",
-	"Select how {{APP_NAME}} authenticates with the Jupyter server.": "",
-=======
 	"Select Filter": "選取篩選器",
 	"Select for Compare": "選取以進行比較",
->>>>>>> aiagent-dev
 	"Select how to split message text for TTS requests": "選擇如何拆分訊息文字以用於 TTS 請求",
 	"Select Knowledge": "選擇知識庫",
 	"Select Method": "選擇方法",
@@ -3809,11 +3694,7 @@
 	"This folder is empty": "此資料夾為空",
 	"This is a default user permission and will remain enabled.": "此權限已在預設使用者設定中啟用，並將持續生效。",
 	"This is an experimental feature, it may not function as expected and is subject to change at any time.": "這是一個實驗性功能，它可能無法如預期運作，並且可能會隨時變更。",
-<<<<<<< HEAD
-	"This knowledge base retrieves from a connected source. {{APP_NAME}} can query it, but cannot upload, sync, edit, delete, reset, or reindex its source data.": "",
-=======
 	"This knowledge base retrieves from a connected source. Open WebUI can query it, but cannot upload, sync, edit, delete, reset, or reindex its source data.": "此知識庫自連線來源擷取資料。Open WebUI 可進行查詢，但無法上傳、同步、編輯、刪除、重設或重建其來源資料的索引。",
->>>>>>> aiagent-dev
 	"This model is not publicly available. Please select another model.": "此模型未開放公眾使用，請選擇其他模型。",
 	"This option controls how long the model will stay loaded into memory following the request (default: 5m)": "此選項控制模型請求後在記憶體中保持載入狀態的時長（預設：5 分鐘）",
 	"This option controls how many tokens are preserved when refreshing the context. For example, if set to 2, the last 2 tokens of the conversation context will be retained. Preserving context can help maintain the continuity of a conversation, but it may reduce the ability to respond to new topics.": "此選項控制在重新整理上下文時保留多少 Token。例如，如果設定為 2，則會保留對話上下文的最後 2 個 Token。保留上下文有助於保持對話的連貫性，但也可能降低對新主題的回應能力。",
@@ -4160,11 +4041,7 @@
 	"You do not have permission to upload files to this knowledge base.": "您沒有權限上傳檔案到此知識庫。",
 	"You do not have permission to upload files.": "您沒有權限上傳檔案。",
 	"You do not have permission to upload web content.": "您沒有上傳網頁內容的權限。",
-<<<<<<< HEAD
-	"You have more than 50 users, which often means this workspace is supporting organizational use. {{APP_NAME}} is free to use as-is, with no restrictions or hidden limits, and we want to keep it that way.": "",
-=======
 	"You have more than 50 users, which often means this workspace is supporting organizational use. Open WebUI is free to use as-is, with no restrictions or hidden limits, and we want to keep it that way.": "您的使用者數量已超過 50 位，這通常代表此工作區正用於組織用途。Open WebUI 完全免費使用，沒有任何限制或隱藏門檻，我們也希望一直保持如此。",
->>>>>>> aiagent-dev
 	"You have no archived conversations.": "您沒有已封存的對話。",
 	"You have no shared conversations.": "您沒有已分享的對話。",
 	"You have shared this chat": "您已分享此對話",
@@ -4174,14 +4051,10 @@
 	"Your account status is currently pending activation.": "您的帳號目前正在等待啟用。",
 	"Your browser does not support the audio tag.": "您的瀏覽器不支援音訊播放。",
 	"Your browser does not support the video tag.": "您的瀏覽器不支援影片播放。",
-<<<<<<< HEAD
-	"Your entire contribution will go directly to the plugin developer; {{APP_NAME}} does not take any percentage. However, the chosen funding platform might have its own fees.": "您的所有貢獻將會直接交給外掛開發者；{{APP_NAME}} 不會收取任何抽成。然而，所選擇的贊助平臺可能有其自身的費用。",
-=======
 	"Your changes in this comparison will be discarded. The original draft will stay unchanged.": "您在此比較中的變更將被捨棄，原始草稿會維持不變。",
 	"Your comparison changes will be discarded. Your prompt will stay unchanged.": "您在比較中的變更將被捨棄，您的提示詞會維持不變。",
 	"Your entire contribution will go directly to the plugin developer; Open WebUI does not take any percentage. However, the chosen funding platform might have its own fees.": "您的所有貢獻將會直接交給外掛開發者；Open WebUI 不會收取任何抽成。然而，所選擇的贊助平臺可能有其自身的費用。",
 	"Your link is private until you choose who can view it.": "在您選擇誰可以檢視之前，您的連結是私密的。",
->>>>>>> aiagent-dev
 	"Your message text or inputs": "您的訊息文字或輸入",
 	"Your query will be sent to the configured web search provider.": "您的查詢將會傳送至已設定的網頁搜尋提供者。",
 	"Your unsaved changes will be lost.": "您未儲存的變更將會遺失。",

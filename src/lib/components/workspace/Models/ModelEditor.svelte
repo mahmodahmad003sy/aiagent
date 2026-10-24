@@ -992,37 +992,38 @@
 					}}
 				>
 					<div class="w-full px-1">
-						<div class="flex w-full flex-col gap-3">
-							<div class="flex w-full min-w-0 items-center gap-3 py-0.5">
-								<div class="flex min-w-0 flex-1 items-center gap-3">
-									<!-- LICENSE covers this Open WebUI fallback logo.
+						<fieldset disabled={readOnly} class="flex w-full flex-col gap-3">
+							<div class="group/header flex min-w-0 flex-col gap-3">
+								<div class="flex w-full min-w-0 items-center gap-3 py-0.5">
+									<div class="flex min-w-0 flex-1 items-center gap-3">
+										<!-- LICENSE covers this Open WebUI fallback logo.
 									Do not alter, remove, obscure, or replace it except as LICENSE permits:
 									https://docs.openwebui.com/license. -->
-									<div class="group relative size-12 shrink-0 md:size-14">
-										<button
-											class="group relative flex size-full items-center overflow-hidden rounded-xl {info
-												.meta.profile_image_url !== `${WEBUI_BASE_URL}/static/favicon.png`
-												? 'bg-transparent'
-												: 'bg-gray-50 dark:bg-gray-850'} ring-1 ring-gray-200/70 transition hover:ring-gray-300 dark:ring-white/10 dark:hover:ring-white/20"
-											type="button"
-											aria-label={$i18n.t('Upload profile image')}
-											on:click={() => {
-												filesInputElement.click();
-											}}
-										>
-											{#if info.meta.profile_image_url}
-												<img
-													src={info.meta.profile_image_url}
-													alt={$i18n.t('model profile')}
-													class="size-full object-cover"
-												/>
-											{:else}
-												<img
-													src="{WEBUI_BASE_URL}/static/favicon.png"
-													alt={$i18n.t('model profile')}
-													class="size-full object-cover"
-												/>
-											{/if}
+										<div class="group relative size-12 shrink-0 md:size-14">
+											<button
+												class="group relative flex size-full items-center overflow-hidden rounded-xl {info
+													.meta.profile_image_url !== `${WEBUI_BASE_URL}/static/favicon.png`
+													? 'bg-transparent'
+													: 'bg-gray-50 dark:bg-gray-850'} ring-1 ring-gray-200/70 transition hover:ring-gray-300 dark:ring-white/10 dark:hover:ring-white/20"
+												type="button"
+												aria-label={$i18n.t('Upload profile image')}
+												on:click={() => {
+													filesInputElement.click();
+												}}
+											>
+												{#if info.meta.profile_image_url}
+													<img
+														src={info.meta.profile_image_url}
+														alt={$i18n.t('model profile')}
+														class="size-full object-cover"
+													/>
+												{:else}
+													<img
+														src="{WEBUI_BASE_URL}/static/favicon.png"
+														alt={$i18n.t('model profile')}
+														class="size-full object-cover"
+													/>
+												{/if}
 
 												<div
 													class="absolute bottom-0 right-0 z-10 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100"

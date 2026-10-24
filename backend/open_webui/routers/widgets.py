@@ -39,7 +39,6 @@ from open_webui.utils.auth import create_token, get_verified_user
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.models import get_all_models, get_filtered_models
 from open_webui.utils.rate_limit import RateLimiter
-from open_webui.utils.redis import get_redis_client
 from open_webui.utils.widget_crawl_jobs import request_cancel as request_widget_job_cancel
 from open_webui.utils.widget_knowledge_sync import delete_widget_knowledge
 from open_webui.utils.widget_secrets import redact_widget_session_secrets
@@ -79,13 +78,11 @@ WIDGET_KNOWLEDGE_INSTRUCTION = (
 )
 
 public_widget_chat_rate_limiter = RateLimiter(
-    redis_client=get_redis_client(),
     limit=PUBLIC_WIDGET_CHAT_RATE_LIMIT,
     window=PUBLIC_WIDGET_RATE_LIMIT_WINDOW,
     bucket_size=10,
 )
 public_widget_visitor_rate_limiter = RateLimiter(
-    redis_client=get_redis_client(),
     limit=PUBLIC_WIDGET_VISITOR_RATE_LIMIT,
     window=PUBLIC_WIDGET_RATE_LIMIT_WINDOW,
     bucket_size=10,
@@ -230,12 +227,13 @@ def _ensure_public_request_size(request: Request) -> None:
         )
 
 
-def _ensure_public_rate_limit(request: Request, widget: ChatWidgetModel, visitor_id: Optional[str]) -> None:
+async def _ensure_public_rate_limit(request: Request, widget: ChatWidgetModel, visitor_id: Optional[str]) -> None:
     widget_key = f'chat_widget:{widget.id}'
     visitor_key = f'{widget_key}:{visitor_id or _client_key(request)}'
-    if public_widget_chat_rate_limiter.is_limited(widget_key) or public_widget_visitor_rate_limiter.is_limited(
-        visitor_key
-    ):
+    redis = request.app.state.redis
+    if await public_widget_chat_rate_limiter.is_limited(
+        redis, widget_key
+    ) or await public_widget_visitor_rate_limiter.is_limited(redis, visitor_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
@@ -605,7 +603,7 @@ async def create_public_widget_chat_message(
 ):
     _ensure_public_request_size(request)
     widget, owner = await _get_public_widget(request, db, token=token, widget_id=form_data.widget_id)
-    _ensure_public_rate_limit(request, widget, form_data.visitor_id or form_data.session_id)
+    await _ensure_public_rate_limit(request, widget, form_data.visitor_id or form_data.session_id)
     _set_public_cors_headers(http_response, request, widget)
 
     session, previous_session_end = await _resolve_public_session(
@@ -808,7 +806,7 @@ async def resume_public_widget_session(
     """
     _ensure_public_request_size(request)
     widget, owner = await _get_public_widget(request, db, token=token, widget_id=form_data.widget_id)
-    _ensure_public_rate_limit(request, widget, form_data.visitor_id)
+    await _ensure_public_rate_limit(request, widget, form_data.visitor_id)
     _set_public_cors_headers(http_response, request, widget)
 
     session, previous_session_end = await _resolve_public_session(

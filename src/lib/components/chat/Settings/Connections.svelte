@@ -136,7 +136,7 @@
 						'CORS must be properly configured by the provider to allow requests from {{APP_NAME}}.'
 					)}
 				</div>
-			</div>
+			</section>
 		{:else}
 			<div class="flex h-full justify-center">
 				<div class="my-auto">
