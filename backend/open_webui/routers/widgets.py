@@ -45,6 +45,7 @@ from open_webui.utils.rate_limit import RateLimiter
 from open_webui.utils.widget_crawl_jobs import request_cancel as request_widget_job_cancel
 from open_webui.utils.widget_knowledge_sync import delete_widget_knowledge
 from open_webui.utils.widget_secrets import redact_widget_session_secrets
+from open_webui.utils.widget_defaults import widget_system_prompt, widget_welcome_message
 from open_webui.utils.widget_sessions import (
     end_widget_session,
     hide_widget_session,
@@ -617,7 +618,7 @@ async def get_public_widget_config(
     return PublicWidgetConfigResponse(
         id=widget.id,
         name=widget.name,
-        welcome_message=widget.welcome_message,
+        welcome_message=widget_welcome_message(widget.welcome_message),
         theme=widget.theme,
         debug_logs=widget.debug_logs,
     )
@@ -681,7 +682,7 @@ async def create_public_widget_chat_message(
     user_message_id = str(uuid4())
     assistant_message_id = str(uuid4())
 
-    system_prompt = widget.system_prompt or ''
+    system_prompt = widget_system_prompt(widget.system_prompt)
     if widget.knowledge_id:
         system_prompt = f'{system_prompt}\n\n{WIDGET_KNOWLEDGE_INSTRUCTION}'.strip()
 

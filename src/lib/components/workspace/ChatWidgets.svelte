@@ -9,6 +9,8 @@
 	import { models, workspaceActions, workspaceCounts } from '$lib/stores';
 	import {
 		DEFAULT_WIDGET_THEME,
+		DEFAULT_WIDGET_SYSTEM_PROMPT,
+		DEFAULT_WIDGET_WELCOME_MESSAGE,
 		createChatWidget,
 		deleteChatWidget,
 		deleteChatWidgetSession,
@@ -63,8 +65,8 @@
 	let form: ChatWidgetForm = {
 		name: '',
 		model_id: '',
-		system_prompt: '',
-		welcome_message: '',
+		system_prompt: DEFAULT_WIDGET_SYSTEM_PROMPT,
+		welcome_message: DEFAULT_WIDGET_WELCOME_MESSAGE,
 		enabled: true,
 		allowed_domains: [],
 		mcp_enabled: false,
@@ -129,8 +131,8 @@
 		form = {
 			name: '',
 			model_id: $models?.[0]?.id ?? '',
-			system_prompt: '',
-			welcome_message: '',
+			system_prompt: DEFAULT_WIDGET_SYSTEM_PROMPT,
+			welcome_message: DEFAULT_WIDGET_WELCOME_MESSAGE,
 			enabled: true,
 			allowed_domains: [],
 			mcp_enabled: false,
@@ -149,8 +151,8 @@
 		form = {
 			name: widget.name,
 			model_id: widget.model_id,
-			system_prompt: widget.system_prompt ?? '',
-			welcome_message: widget.welcome_message ?? '',
+			system_prompt: widget.system_prompt?.trim() || DEFAULT_WIDGET_SYSTEM_PROMPT,
+			welcome_message: widget.welcome_message?.trim() || DEFAULT_WIDGET_WELCOME_MESSAGE,
 			enabled: widget.enabled,
 			allowed_domains: widget.allowed_domains ?? [],
 			mcp_enabled: widget.mcp_enabled,
@@ -663,6 +665,7 @@
 								class="min-h-28 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
 								bind:value={form.system_prompt}
 							></textarea>
+							<p class="mt-1 text-xs text-gray-500">{$i18n.t('Leave blank to use the default instructions for context-only answers, uncertainty, and privacy. Custom instructions replace the default.')}</p>
 						</label>
 
 						<label class="block">
@@ -673,6 +676,7 @@
 								class="min-h-20 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
 								bind:value={form.welcome_message}
 							></textarea>
+							<p class="mt-1 text-xs text-gray-500">{$i18n.t('Leave blank to use the default welcome message.')}</p>
 						</label>
 					</div>
 

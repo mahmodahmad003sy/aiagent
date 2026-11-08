@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { WIDGET_FONT_STACKS, type ChatWidgetTheme } from '$lib/apis/widgets';
+	import { DEFAULT_WIDGET_WELCOME_MESSAGE, WIDGET_FONT_STACKS, type ChatWidgetTheme } from '$lib/apis/widgets';
 
 	export let theme: ChatWidgetTheme;
 	export let name: string;
@@ -16,7 +16,7 @@
 	$: launcherSide = theme.position === 'left' ? 'left: 12px;' : 'right: 12px;';
 	$: title = theme.header_title || name || 'Chat';
 	$: subtitle = theme.header_subtitle || 'Online';
-	$: assistantText = welcomeMessage || 'Hi! How can I help you?';
+	$: assistantText = welcomeMessage?.trim() || DEFAULT_WIDGET_WELCOME_MESSAGE;
 </script>
 
 <div
@@ -147,6 +147,9 @@
 				</svg>
 			</button>
 		</div>
+		<p class="m-0 shrink-0 bg-white px-3 pb-2.5 text-center text-[11px] leading-relaxed text-gray-600">
+			AI-generated answers may contain mistakes. Please verify important information.
+		</p>
 	</div>
 
 	<div

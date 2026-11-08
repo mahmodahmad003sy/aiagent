@@ -1,4 +1,8 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import widgetDefaults from '../../../../backend/open_webui/static/widget/defaults.json';
+
+export const DEFAULT_WIDGET_SYSTEM_PROMPT = widgetDefaults.system_prompt;
+export const DEFAULT_WIDGET_WELCOME_MESSAGE = widgetDefaults.welcome_message;
 
 export type ChatWidgetTheme = {
 	primary_color: string;

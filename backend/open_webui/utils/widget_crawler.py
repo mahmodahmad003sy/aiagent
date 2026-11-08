@@ -9,6 +9,7 @@ from typing import Optional
 from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
+from open_webui.utils.widget_crawl_next_data import extract_metasolutions_page
 from open_webui.models.chat_widget_crawl import ChatWidgetCrawlItems, ChatWidgetCrawlRuns, ChatWidgetCrawlSettings
 from open_webui.utils.widget_crawl_fetch import CrawlFetcher, FetchResult
 from open_webui.utils.widget_crawl_vip import fetch_vip
@@ -22,6 +23,7 @@ from open_webui.utils.widget_crawl_urls import (
     MAX_LINKED_ITEMS,
     MAX_PAGE_BYTES,
     MAX_PAGE_TEXT_CHARS,
+    MIN_PAGE_TEXT_CHARS,
     MAX_SITEMAP_BYTES,
     MAX_SITEMAP_URLS,
     MAX_SITEMAPS,
@@ -62,6 +64,7 @@ def _clean(value: str) -> str:
 
 def parse_html_page(html: str, page_url: str) -> ParsedPage:
     soup = BeautifulSoup(html, 'lxml')
+    embedded = extract_metasolutions_page(html, page_url)
 
     base_tag = soup.find('base', href=True)
     base_url = urljoin(page_url, base_tag['href']) if base_tag else page_url
@@ -103,6 +106,19 @@ def parse_html_page(html: str, page_url: str) -> ParsedPage:
     root = soup.find('main') or soup.find('article') or soup.body or soup
     lines = [_clean(line) for line in root.get_text('\n').splitlines()]
     text = '\n'.join(line for line in lines if line)[:MAX_PAGE_TEXT_CHARS]
+
+    if embedded and len(text.strip()) < MIN_PAGE_TEXT_CHARS:
+        text = embedded['content_text'][:MAX_PAGE_TEXT_CHARS]
+        title = (embedded['title'] or title)[:MAX_TITLE_CHARS]
+        # Preserve real links in embedded descriptions through the usual URL filters.
+        content = BeautifulSoup(embedded['content_html'], 'lxml')
+        for anchor in content.find_all('a', href=True):
+            url = resolve_href(base_url, anchor['href'])
+            if url and url not in seen_on_page:
+                seen_on_page.add(url)
+                links.append(ParsedLink(url=url,
+                    text=_clean(anchor.get_text(' ', strip=True))[:MAX_LINK_TEXT_CHARS],
+                    context=_clean(anchor.parent.get_text(' ', strip=True))[:MAX_CONTEXT_CHARS]))
 
     return ParsedPage(title=title, canonical=canonical, links=links, text=text)
 
