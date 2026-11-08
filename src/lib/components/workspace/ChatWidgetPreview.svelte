@@ -88,6 +88,38 @@
 			>
 				Sure - what is your order number?
 			</div>
+			{#if theme.feedback_enabled !== false}
+				<div
+					class="flex items-center gap-1"
+					style={`color: ${theme.assistant_text_color};`}
+					aria-label="Feedback appearance preview"
+				>
+					<span class="mr-1 text-[10px] opacity-60">10:30 AM</span>
+					{#each [1, -1] as vote}
+						<span
+							class="inline-flex h-[30px] min-w-[30px] items-center justify-center gap-1 rounded-lg px-1 text-[11px]"
+							title={vote === 1 ? 'Helpful' : 'Not helpful'}
+						>
+							<svg
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.6"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								style={vote === -1 ? 'transform:rotate(180deg)' : ''}
+								aria-hidden="true"
+								><path
+									d="M7 10v11H3V10h4Zm0 0 5-8a3 3 0 0 1 2 3l-1 5h6a2 2 0 0 1 2 2l-1 7a2 2 0 0 1-2 2H7"
+								/></svg
+							>
+							{#if theme.feedback_style === 'labels'}{vote === 1 ? 'Helpful' : 'Not helpful'}{/if}
+						</span>
+					{/each}
+				</div>
+			{/if}
 		</div>
 
 		<div class="flex shrink-0 items-end gap-2 border-t border-black/10 bg-white p-2.5">
@@ -100,6 +132,9 @@
 				class="min-h-[42px] flex-1 resize-none rounded-[10px] border border-gray-200 bg-white px-3 py-2.5 text-gray-400 outline-none"
 				style={`font-size: ${theme.font_size}px; font-family: ${fontFamily};`}
 			></textarea>
+            <span class="flex h-[42px] w-7 shrink-0 items-center justify-center text-gray-500" title="Expand message box">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6" /></svg>
+            </span>
 			<button
 				type="button"
 				disabled

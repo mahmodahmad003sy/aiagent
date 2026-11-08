@@ -57,7 +57,7 @@
 		'<section class="owui-panel" aria-label="Chat widget" aria-live="polite" role="dialog">' +
 		'<header class="owui-header"><div class="owui-brand"><div class="owui-avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 4A3.5 3.5 0 0 0 2 7.5v5A3.5 3.5 0 0 0 5.5 16H7v3.2a.8.8 0 0 0 1.3.62L13.08 16h5.42A3.5 3.5 0 0 0 22 12.5v-5A3.5 3.5 0 0 0 18.5 4h-13Z"/></svg></div><div class="owui-heading"><div class="owui-title">Chat</div><div class="owui-status"><span class="owui-status-dot"></span><span class="owui-subtitle">Connecting</span></div></div></div><div class="owui-actions"><button class="owui-new-chat" type="button" aria-label="New chat" title="New chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5Z"/></svg></button><button class="owui-close" type="button" aria-label="Close chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></svg></button></div></header>' +
 		'<div class="owui-messages"></div>' +
-		'<form class="owui-form"><textarea class="owui-input" rows="1" placeholder="Type a message" aria-label="Message"></textarea><button class="owui-send" type="submit" aria-label="Send message"><svg class="owui-send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21.2 12 3.4 3.6 3 10.2l10.4 1.8L3 13.8l.4 6.6Z"/></svg><span class="owui-send-spinner" aria-hidden="true"></span></button></form>' +
+		'<form class="owui-form"><textarea class="owui-input" rows="1" placeholder="Type a message" aria-label="Message"></textarea><button class="owui-expand-input" type="button" aria-label="Expand message box" title="Expand message box" aria-expanded="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/></svg></button><button class="owui-send" type="submit" aria-label="Send message"><svg class="owui-send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21.2 12 3.4 3.6 3 10.2l10.4 1.8L3 13.8l.4 6.6Z"/></svg><span class="owui-send-spinner" aria-hidden="true"></span></button></form>' +
 		'</section>';
 
 	document.documentElement.appendChild(root);
@@ -70,6 +70,19 @@
 	var form = root.querySelector('.owui-form');
 	var input = root.querySelector('.owui-input');
 	var sendButton = root.querySelector('.owui-send');
+	var expandInput = root.querySelector('.owui-expand-input');
+	var inputExpanded = false;
+	expandInput.addEventListener('click', function () {
+		inputExpanded = !inputExpanded;
+		expandInput.setAttribute('aria-expanded', String(inputExpanded));
+		expandInput.setAttribute(
+			'aria-label',
+			inputExpanded ? 'Collapse message box' : 'Expand message box'
+		);
+		expandInput.title = inputExpanded ? 'Collapse message box' : 'Expand message box';
+		resizeInput();
+		input.focus();
+	});
 	var title = root.querySelector('.owui-title');
 	var subtitle = root.querySelector('.owui-subtitle');
 	var badge = root.querySelector('.owui-badge');
@@ -140,13 +153,17 @@
 
 	function navigationType() {
 		try {
-			var entries = window.performance && performance.getEntriesByType && performance.getEntriesByType('navigation');
+			var entries =
+				window.performance &&
+				performance.getEntriesByType &&
+				performance.getEntriesByType('navigation');
 			if (entries && entries[0] && entries[0].type) return entries[0].type;
 		} catch (error) {
 			// Fall through to the legacy API.
 		}
 		try {
-			if (window.performance && performance.navigation && performance.navigation.type === 1) return 'reload';
+			if (window.performance && performance.navigation && performance.navigation.type === 1)
+				return 'reload';
 		} catch (error) {
 			// Unknown: treat as a normal navigation.
 		}
@@ -163,7 +180,10 @@
 
 	function saveTabState() {
 		try {
-			window.sessionStorage.setItem(tabKey, JSON.stringify({ session_id: sessionId, open: isOpen }));
+			window.sessionStorage.setItem(
+				tabKey,
+				JSON.stringify({ session_id: sessionId, open: isOpen })
+			);
 		} catch (error) {
 			// Without sessionStorage the chat lasts for this page only.
 		}
@@ -185,7 +205,10 @@
 
 	function saveState(value) {
 		try {
-			window.localStorage.setItem(storageKey, JSON.stringify({ visitor_id: (value || state).visitor_id }));
+			window.localStorage.setItem(
+				storageKey,
+				JSON.stringify({ visitor_id: (value || state).visitor_id })
+			);
 		} catch (error) {
 			// Storage can be blocked by the host page. The widget still works for the active tab.
 		}
@@ -251,7 +274,12 @@
 		if (reason === 'page_hide') debugLog('session.hide', { session: shortId(id) });
 		var url = apiBase + '/api/v1/widgets/public/session/end?token=' + encodeURIComponent(token);
 		// text/plain keeps this a simple CORS request, so it needs no preflight.
-		var body = JSON.stringify({ widget_id: widgetId, session_id: id, visitor_id: state.visitor_id, reason: reason });
+		var body = JSON.stringify({
+			widget_id: widgetId,
+			session_id: id,
+			visitor_id: state.visitor_id,
+			reason: reason
+		});
 		var sent = false;
 		try {
 			if (navigator.sendBeacon) {
@@ -288,7 +316,9 @@
 		}
 		list.forEach(function (item) {
 			var role = item.error ? 'error' : item.role === 'user' ? 'user' : 'assistant';
-			addMessage(role, item.content || '', { quiet: true });
+			var node = addMessage(role, item.content || '', { quiet: true, created_at: item.created_at });
+			if (role === 'assistant')
+				addFeedback(node, item.id, sessionId, item.feedback_vote, item.feedback);
 		});
 	}
 
@@ -308,7 +338,11 @@
 				'Content-Type': 'application/json',
 				'X-Widget-Token': token
 			},
-			body: JSON.stringify({ widget_id: widgetId, session_id: resuming, visitor_id: state.visitor_id })
+			body: JSON.stringify({
+				widget_id: widgetId,
+				session_id: resuming,
+				visitor_id: state.visitor_id
+			})
 		})
 			.then(function (response) {
 				if (!response.ok) throw new Error('Resume failed (' + response.status + ')');
@@ -317,7 +351,10 @@
 			.then(function (data) {
 				if (sessionId !== resuming) return;
 				if (!data.active) {
-					debugLog('session.end', { session: shortId(resuming), reason: data.previous_session_end || 'ended' });
+					debugLog('session.end', {
+						session: shortId(resuming),
+						reason: data.previous_session_end || 'ended'
+					});
 					resetConversation('resume_inactive');
 					if (data.previous_session_end === 'idle_timeout') {
 						addNotice('Your previous chat expired, so a new chat was started.');
@@ -330,7 +367,10 @@
 			})
 			.catch(function (error) {
 				// Keep the session id: the next message lets the server decide whether it continues.
-				debugLog('session.resume_error', { session: shortId(resuming), error: error && error.message });
+				debugLog('session.resume_error', {
+					session: shortId(resuming),
+					error: error && error.message
+				});
 			})
 			.finally(function () {
 				isResuming = false;
@@ -398,19 +438,25 @@
 		setStatus('Connecting');
 		root.classList.remove('owui-unavailable');
 
-		configPromise = fetch(apiBase + '/api/v1/widgets/public/config?widget_id=' + encodeURIComponent(widgetId), {
-			headers: {
-				Accept: 'application/json',
-				'X-Widget-Token': token
+		configPromise = fetch(
+			apiBase + '/api/v1/widgets/public/config?widget_id=' + encodeURIComponent(widgetId),
+			{
+				headers: {
+					Accept: 'application/json',
+					'X-Widget-Token': token
+				}
 			}
-		})
+		)
 			.then(function (response) {
 				if (!response.ok) throw new Error('Unable to load widget');
 				return response.json();
 			})
 			.then(function (data) {
 				config = data;
-				debugLog('config.loaded', { widget: shortId(widgetId), visitor: shortId(state.visitor_id) });
+				debugLog('config.loaded', {
+					widget: shortId(widgetId),
+					visitor: shortId(state.visitor_id)
+				});
 				title.textContent = data.name || 'Chat';
 				applyTheme(data.theme);
 				isReady = true;
@@ -450,7 +496,7 @@
 
 		input.value = '';
 		resizeInput();
-		addMessage('user', text, { quiet: true });
+		var userMessage = addMessage('user', text, { quiet: true });
 
 		var assistant = addMessage('assistant', '', { streaming: true, quiet: true });
 		isSending = true;
@@ -479,12 +525,19 @@
 				if (!response.ok) throw new Error('Message failed (' + response.status + ')');
 				var contentType = response.headers.get('content-type') || '';
 				if (contentType.indexOf('text/event-stream') !== -1 && response.body) {
-					return readStream(response, assistant);
+					return readStream(response, assistant, userMessage);
 				}
 				return response.json().then(function (data) {
 					if (data.session_id) setSession(data.session_id, data);
 					setMessageText(assistant, data.content || '');
-					debugLog('message.done', { session: shortId(sessionId), chars: (data.content || '').length });
+					setMessageTime(userMessage, data.created_at);
+					setMessageTime(assistant, data.assistant_created_at);
+					if (data.error) assistant.classList.add('owui-error');
+					else addFeedback(assistant, data.assistant_message_id, data.session_id);
+					debugLog('message.done', {
+						session: shortId(sessionId),
+						chars: (data.content || '').length
+					});
 					if (data.content && !isOpen) bumpUnread();
 				});
 			})
@@ -505,7 +558,7 @@
 			});
 	}
 
-	function readStream(response, assistant) {
+	function readStream(response, assistant, userMessage) {
 		var reader = response.body.getReader();
 		var decoder = new TextDecoder();
 		var buffer = '';
@@ -537,6 +590,13 @@
 					var data = JSON.parse(payload);
 					if (data.widget && data.widget.session_id) {
 						setSession(data.widget.session_id, data.widget);
+						setMessageTime(userMessage, data.widget.created_at);
+						return;
+					}
+					if (data.widget_saved) {
+						setMessageTime(assistant, data.widget_saved.created_at);
+						if (!assistant.classList.contains('owui-error'))
+							addFeedback(assistant, data.widget_saved.id, data.widget_saved.session_id);
 						return;
 					}
 					if (data.widget_status) {
@@ -593,11 +653,156 @@
 		bubble.className = 'owui-bubble';
 		bubble.textContent = text || '';
 		node.appendChild(bubble);
+		setMessageTime(node, opts.created_at || Date.now() / 1000);
 		messages.appendChild(node);
 
 		if (!opts.quiet && role !== 'user' && !isOpen) bumpUnread();
 		scrollMessages();
 		return node;
+	}
+
+	function setMessageTime(node, timestamp) {
+		if (!timestamp) return;
+		var time = node.querySelector('time');
+		if (!time) {
+			time = document.createElement('time');
+			time.className = 'owui-time';
+			node.appendChild(time);
+		}
+		var date = new Date(timestamp * 1000);
+		time.dateTime = date.toISOString();
+		time.title = date.toLocaleString();
+		time.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	}
+
+	function addFeedback(node, messageId, conversationId, vote, feedback) {
+		var theme = (config && config.theme) || {};
+		if (theme.feedback_enabled === false || !messageId || node.querySelector('.owui-feedback'))
+			return;
+		feedback = feedback || {};
+		var savedVote = vote || null;
+		var savedDetails = feedback;
+		var area = document.createElement('div');
+		area.className =
+			'owui-feedback' + (theme.feedback_style === 'labels' ? ' owui-feedback-labels' : '');
+		area.innerHTML =
+			'<div class="owui-votes" role="group" aria-label="Was this answer helpful?">' +
+			'<button type="button" data-vote="1" aria-label="Helpful" title="Helpful"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v11H3V10h4Zm0 0 5-8a3 3 0 0 1 2 3l-1 5h6a2 2 0 0 1 2 2l-1 7a2 2 0 0 1-2 2H7"/></svg><span class="owui-vote-label">Helpful</span></button>' +
+			'<button type="button" data-vote="-1" aria-label="Not helpful" title="Not helpful"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v11H3V10h4Zm0 0 5-8a3 3 0 0 1 2 3l-1 5h6a2 2 0 0 1 2 2l-1 7a2 2 0 0 1-2 2H7"/></svg><span class="owui-vote-label">Not helpful</span></button>' +
+			'<button type="button" class="owui-details-toggle" hidden>Add details</button></div>' +
+			'<div class="owui-feedback-details" hidden><div class="owui-score-field"><div>Score (optional)</div><div class="owui-stars" role="group" aria-label="Score (optional)">' +
+			[1, 2, 3, 4, 5]
+				.map(function (value) {
+					return (
+						'<button type="button" data-score="' +
+						value +
+						'" aria-label="' +
+						value +
+						(value === 1 ? ' star' : ' stars') +
+						'" title="' +
+						value +
+						' out of 5"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1.1 6.2L12 17.3l-5.7 2.9 1.1-6.2L2.9 9.6l6.3-.9Z"/></svg></button>'
+					);
+				})
+				.join('') +
+			'</div><span class="owui-score-hint">Choose a star; click it again to clear.</span></div>' +
+			'<label>Comment (optional)<textarea maxlength="2000" rows="2" aria-label="Comment (optional)" placeholder="What worked, or what could be improved?"></textarea></label>' +
+			'<small>Your feedback is shared with the chatbot owner. Avoid including private information.</small>' +
+			'<button type="button" class="owui-feedback-save">Save details</button></div><div class="owui-feedback-status" role="status"></div>';
+		node.appendChild(area);
+		var buttons = area.querySelectorAll('[data-vote]');
+		var details = area.querySelector('.owui-feedback-details');
+		var toggle = area.querySelector('.owui-details-toggle');
+		var score = feedback.score || null;
+		var stars = area.querySelectorAll('[data-score]');
+		function renderStars() {
+			stars.forEach(function (star) {
+				star.setAttribute('aria-pressed', String(Number(star.dataset.score) === score));
+				star.classList.toggle('owui-star-filled', Number(star.dataset.score) <= score);
+			});
+		}
+		stars.forEach(function (star) {
+			star.addEventListener('click', function () {
+				var value = Number(star.dataset.score);
+				score = score === value ? null : value;
+				renderStars();
+			});
+		});
+		renderStars();
+		var time = node.querySelector('time');
+		if (time) area.querySelector('.owui-votes').prepend(time);
+		var comment = area.querySelector('textarea');
+		var status = area.querySelector('[role="status"]');
+		comment.value = feedback.comment || '';
+		area.querySelector('.owui-score-field').hidden = theme.feedback_score === false;
+		comment.parentElement.hidden = theme.feedback_comment === false;
+		function refresh() {
+			buttons.forEach(function (button) {
+				button.setAttribute('aria-pressed', String(Number(button.dataset.vote) === savedVote));
+			});
+			toggle.hidden =
+				!savedVote || (theme.feedback_score === false && theme.feedback_comment === false);
+		}
+		function save(nextVote, withDetails) {
+			var controls = area.querySelectorAll('button, select, textarea');
+			controls.forEach(function (control) {
+				control.disabled = true;
+			});
+			status.textContent = 'Saving...';
+			var nextDetails = withDetails ? { score: score, comment: comment.value } : savedDetails;
+			fetch(apiBase + '/api/v1/widgets/public/feedback', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-Widget-Token': token },
+				body: JSON.stringify({
+					widget_id: widgetId,
+					session_id: conversationId,
+					visitor_id: state.visitor_id,
+					message_id: messageId,
+					vote: nextVote,
+					score: nextDetails.score || null,
+					comment: nextDetails.comment || null
+				})
+			})
+				.then(function (response) {
+					if (!response.ok) throw new Error('Feedback could not be saved');
+					return response.json();
+				})
+				.then(function (data) {
+					savedVote = data.vote;
+					savedDetails = data;
+					status.textContent = 'Saved';
+					setTimeout(function () {
+						if (status.textContent === 'Saved') status.textContent = '';
+					}, 2200);
+					if (withDetails) {
+						details.hidden = true;
+						toggle.setAttribute('aria-expanded', 'false');
+					}
+					refresh();
+				})
+				.catch(function () {
+					status.textContent = 'Could not save feedback. Please try again.';
+				})
+				.finally(function () {
+					controls.forEach(function (control) {
+						control.disabled = false;
+					});
+				});
+		}
+		buttons.forEach(function (button) {
+			button.addEventListener('click', function () {
+				save(Number(button.dataset.vote), false);
+			});
+		});
+		toggle.setAttribute('aria-expanded', 'false');
+		toggle.addEventListener('click', function () {
+			details.hidden = !details.hidden;
+			toggle.setAttribute('aria-expanded', String(!details.hidden));
+		});
+		area.querySelector('.owui-feedback-save').addEventListener('click', function () {
+			save(savedVote, true);
+		});
+		refresh();
 	}
 
 	function setMessageText(node, text) {
@@ -684,7 +889,12 @@
 
 	function resizeInput() {
 		input.style.height = 'auto';
-		input.style.height = Math.min(input.scrollHeight, 112) + 'px';
+		var limit = inputExpanded
+			? Math.max(112, Math.min(280, root.querySelector('.owui-panel').clientHeight * 0.45))
+			: 112;
+		input.style.maxHeight = limit + 'px';
+		input.style.height =
+			Math.min(Math.max(input.scrollHeight, inputExpanded ? limit : 42), limit) + 'px';
 	}
 
 	function injectStyles() {
@@ -710,6 +920,9 @@
 			'.owui-new-chat:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:1px}' +
 			'.owui-new-chat svg{width:20px;height:20px;fill:currentColor}' +
 			'.owui-notice{align-self:center;max-width:90%;font-size:12px;line-height:1.4;color:#6b7280;text-align:center;padding:2px 8px}' +
+			'.owui-message{flex-direction:column;align-items:flex-start}.owui-message.owui-user{align-items:flex-end}.owui-time{font-size:11px;color:#64748b;margin:3px 2px}.owui-feedback{max-width:90%;font-size:12px;color:#334155}.owui-votes{display:flex;flex-wrap:wrap;gap:5px}.owui-feedback button{font:inherit;cursor:pointer;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;padding:6px 8px;min-height:32px}.owui-feedback button[aria-pressed=true]{background:#e2e8f0;border-color:#475569}.owui-feedback button:disabled{opacity:.6;cursor:wait}.owui-feedback button:focus-visible{outline:2px solid #2563eb;outline-offset:2px}.owui-feedback [hidden]{display:none}.owui-feedback-details{margin-top:8px;padding:10px;background:#fff;border:1px solid #cbd5e1;border-radius:8px}.owui-feedback label{display:block;margin-bottom:8px}.owui-feedback select,.owui-feedback textarea{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#111827;font:inherit}.owui-feedback small{display:block;margin-bottom:8px}.owui-feedback-status{font-size:11px;margin-top:4px}.owui-streaming .owui-feedback{display:none}' +
+			'.owui-feedback{max-width:82%;color:var(--owui-assistant-fg,#475569)}.owui-votes{gap:2px;align-items:center}.owui-feedback button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:30px;min-height:30px;padding:5px;border-color:transparent;border-radius:8px;background:transparent;color:inherit;transition:background .15s,color .15s}.owui-feedback button:hover{background:rgba(128,128,128,.12)}.owui-feedback button[aria-pressed=true]{background:rgba(128,128,128,.16);border-color:transparent;color:var(--owui-primary,#111827)}.owui-feedback button svg{width:16px;height:16px;flex-shrink:0}.owui-feedback [data-vote="-1"] svg{transform:rotate(180deg)}.owui-vote-label{display:none}.owui-feedback-labels .owui-vote-label{display:inline}.owui-feedback .owui-details-toggle{font-size:11px;padding:4px 7px;opacity:.8}.owui-feedback-details{width:250px;max-width:100%;border-color:rgba(128,128,128,.2);box-shadow:0 4px 18px rgba(0,0,0,.04);border-radius:12px}.owui-feedback-status:empty{display:none}.owui-feedback-status{margin-top:2px;opacity:.7}.owui-feedback .owui-feedback-save{background:var(--owui-primary,#111827);color:var(--owui-on-primary,#fff);padding:5px 10px}.owui-feedback small{font-size:10px;line-height:1.4;color:#64748b}@media(pointer:coarse){.owui-feedback button{min-width:36px;min-height:36px}}' +
+			'.owui-feedback .owui-time{flex-shrink:0;margin-right:6px}.owui-votes{flex-wrap:nowrap}.owui-feedback{max-width:100%}.owui-stars{display:flex;flex-wrap:nowrap;gap:2px;margin-top:4px}.owui-feedback .owui-stars button{color:#94a3b8;background:transparent;border:0;min-width:32px;min-height:32px}.owui-feedback .owui-stars svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5}.owui-feedback .owui-stars .owui-star-filled{color:#d97706}.owui-feedback .owui-star-filled svg{fill:currentColor}.owui-score-hint{display:block;font-size:10px;color:#64748b;margin:3px 0 10px}.owui-expand-input{flex:0 0 28px;width:28px;height:42px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:8px;color:#64748b;cursor:pointer}.owui-expand-input:hover{background:#f1f5f9}.owui-expand-input:focus-visible{outline:2px solid #2563eb}.owui-input{overflow-y:auto}' +
 			'.owui-messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--owui-bg,#fafafa);scrollbar-width:thin}.owui-message{display:flex;min-width:0}.owui-user{justify-content:flex-end}.owui-assistant,.owui-error{justify-content:flex-start}.owui-bubble{max-width:82%;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:var(--owui-bubble-radius,12px);padding:9px 11px;font-size:var(--owui-font-size,14px);line-height:1.45;background:var(--owui-assistant-bg,#fff);border:1px solid #eceff3;color:var(--owui-assistant-fg,#111827);box-shadow:0 1px 2px rgba(17,24,39,.04)}.owui-user .owui-bubble{background:var(--owui-user-bg,#111827);color:var(--owui-user-fg,#fff);border-color:var(--owui-user-bg,#111827)}.owui-error .owui-bubble{background:#fff1f2;border-color:#fecdd3;color:#9f1239}' +
 			'.owui-streaming .owui-bubble:empty:after{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:#9ca3af;animation:owuiPulse 1s infinite}.owui-form{display:flex;align-items:flex-end;gap:8px;padding:10px;border-top:1px solid #eef0f3;background:#fff}.owui-input{flex:1;min-width:0;min-height:42px;max-height:112px;resize:none;border:1px solid #d9dee7;border-radius:10px;padding:10px 11px;font-size:var(--owui-font-size,14px);line-height:1.35;outline:none;background:#fff;color:#111827}.owui-input:focus{border-color:var(--owui-primary,#111827);box-shadow:0 0 0 3px rgba(17,24,39,.08)}.owui-input:disabled{background:#f9fafb;color:#9ca3af;cursor:not-allowed}.owui-input::placeholder{color:#9ca3af}' +
 			'.owui-send{position:relative;width:42px;height:42px;flex:0 0 42px;border:0;border-radius:10px;background:var(--owui-primary,#111827);color:var(--owui-on-primary,#fff);display:flex;align-items:center;justify-content:center;cursor:pointer}.owui-send:hover:not(:disabled){background:var(--owui-primary,#111827);filter:brightness(1.15)}.owui-send:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:1px}.owui-send:disabled{opacity:.55;cursor:not-allowed}.owui-send svg{width:19px;height:19px;fill:currentColor}.owui-send-spinner{position:absolute;width:18px;height:18px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:999px;display:none;animation:owuiSpin .75s linear infinite}.owui-sending .owui-send-icon{opacity:0}.owui-sending .owui-send-spinner{display:block}.owui-launcher-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .16s ease}.owui-launcher-has-img .owui-launcher-chat{display:none}.owui-open .owui-launcher-img{opacity:0}' +

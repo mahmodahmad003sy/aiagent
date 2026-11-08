@@ -5,16 +5,19 @@ import json
 import logging
 import time
 from datetime import timedelta
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlparse
 from uuid import uuid4
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.chat_widgets import (
     ChatWidgetTheme,
+    ChatWidgetMessage,
+    ChatWidgetSession,
     ChatWidgetMessageForm,
     ChatWidgetMessageModel,
     ChatWidgetMessages,
@@ -55,12 +58,29 @@ from open_webui.utils.widget_stream import (
     unregister_widget_turn,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import select
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import Response, StreamingResponse, FileResponse
 
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get('/public/embed.js', include_in_schema=False)
+async def widget_embed_script():
+    return FileResponse(Path(__file__).resolve().parents[1] / 'static/widget/chat-widget.js',
+                        media_type='text/javascript', headers={
+                            'Cross-Origin-Resource-Policy': 'cross-origin',
+                            'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache',
+                        })
+
+
+@router.get('/public/preview.js', include_in_schema=False)
+async def widget_preview_script():
+    return FileResponse(Path(__file__).resolve().parents[1] / 'static/widget/preview.js',
+                        media_type='text/javascript', headers={'Cache-Control': 'no-cache'})
 
 PUBLIC_WIDGET_CHAT_MESSAGE_LIMIT = 20_000
 PUBLIC_WIDGET_REQUEST_BODY_LIMIT = 64 * 1024
@@ -120,6 +140,9 @@ class PublicWidgetChatResponse(BaseModel):
     message_id: str
     assistant_message_id: Optional[str] = None
     content: Optional[str] = None
+    created_at: Optional[int] = None
+    assistant_created_at: Optional[int] = None
+    error: bool = False
     accepted: bool = True
     new_session: bool = False
     previous_session_end: Optional[str] = None
@@ -133,6 +156,10 @@ class PublicWidgetSessionResumeForm(BaseModel):
 
 
 class PublicWidgetResumeMessage(BaseModel):
+    id: str
+    created_at: int
+    feedback_vote: Optional[int] = None
+    feedback: Optional[dict] = None
     role: str
     content: str
     error: bool = False
@@ -285,6 +312,12 @@ def _domain_matches(domain: str, allowed_domain: str) -> bool:
 
 
 def _ensure_domain_allowed(request: Request, widget: ChatWidgetModel) -> None:
+    # Hosted previews use the same API origin. External embeds still use the allowlist.
+    origin = request.headers.get('origin')
+    referer = request.headers.get('referer')
+    source = urlparse(origin or referer or '')
+    if (source.scheme, source.netloc) == (request.url.scheme, request.url.netloc):
+        return
     allowed_domains = widget.allowed_domains or []
     if not allowed_domains:
         return
@@ -527,6 +560,7 @@ async def _save_assistant_message(
     model_id: str,
     content: str,
     usage: Optional[dict] = None,
+    parent_message_id: Optional[str] = None,
     error: Optional[dict | str] = None,
     db: AsyncSession | None = None,
 ) -> ChatWidgetMessageModel:
@@ -535,6 +569,7 @@ async def _save_assistant_message(
         widget_id,
         ChatWidgetMessageForm(
             role='assistant',
+            parent_message_id=parent_message_id,
             content=content,
             model_id=model_id,
             done=True,
@@ -564,6 +599,8 @@ async def get_widgets(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
+    if user.role == 'admin':
+        return await ChatWidgets.get_widgets(db=db)
     return await ChatWidgets.get_widgets_by_user_id(user.id, db=db)
 
 
@@ -683,7 +720,10 @@ async def create_public_widget_chat_message(
     turn = register_widget_turn(assistant_message_id)
     widget_id, session_id, model_id, owner_id = widget.id, session.id, widget.model_id, widget.user_id
 
+    saved_assistant = None
+
     async def run_turn():
+        nonlocal saved_assistant
         try:
             await request.app.state.CHAT_COMPLETION_HANDLER(request, form_payload, user=owner)
         except HTTPException as exc:
@@ -692,11 +732,12 @@ async def create_public_widget_chat_message(
             turn.handle_event({'type': 'chat:message:error', 'data': {'error': {'content': str(exc)}}})
         finally:
             try:
-                await _save_assistant_message(
+                saved_assistant = await _save_assistant_message(
                     session_id,
                     widget_id,
                     model_id,
                     turn.content,
+                    parent_message_id=message.id,
                     usage=turn.usage,
                     error={'content': turn.error} if turn.error else None,
                     db=None,
@@ -714,6 +755,7 @@ async def create_public_widget_chat_message(
             widget_event = {
                 'session_id': session_id,
                 'message_id': message.id,
+                'created_at': message.created_at,
                 'new_session': new_session,
                 'previous_session_end': previous_session_end,
             }
@@ -727,6 +769,9 @@ async def create_public_widget_chat_message(
                 if item is None:
                     break
                 yield f'data: {JSONCodec.dumps(item)}\n\n'
+            if saved_assistant:
+                receipt = {'id': saved_assistant.id, 'created_at': saved_assistant.created_at, 'session_id': session_id}
+                yield f'data: {JSONCodec.dumps({"widget_saved": receipt})}\n\n'
             yield 'data: [DONE]\n\n'
 
         stream_response = StreamingResponse(event_stream(), media_type='text/event-stream')
@@ -740,7 +785,10 @@ async def create_public_widget_chat_message(
         widget_id=widget.id,
         session_id=session.id,
         message_id=message.id,
-        assistant_message_id=None,
+        assistant_message_id=saved_assistant.id if saved_assistant else None,
+        created_at=message.created_at,
+        assistant_created_at=saved_assistant.created_at if saved_assistant else None,
+        error=bool(turn.error),
         content=turn.content if not turn.error else WIDGET_ERROR_MESSAGE,
         new_session=new_session,
         previous_session_end=previous_session_end,
@@ -819,6 +867,10 @@ async def resume_public_widget_session(
     stored = await ChatWidgetMessages.get_messages_by_session_id_and_widget_id(session.id, widget.id, db=db)
     messages = [
         PublicWidgetResumeMessage(
+            id=message.id,
+            created_at=message.created_at,
+            feedback_vote=message.feedback_vote,
+            feedback=message.feedback,
             role=message.role,
             content=_message_content_as_text(message.content) if not message.error else WIDGET_ERROR_MESSAGE,
             error=bool(message.error),
@@ -829,6 +881,70 @@ async def resume_public_widget_session(
     return PublicWidgetSessionResumeResponse(active=True, session_id=session.id, messages=messages)
 
 
+class PublicWidgetFeedbackForm(PublicWidgetSessionResumeForm):
+    message_id: str = Field(min_length=1, max_length=128)
+    vote: Literal[-1, 1]
+    score: Optional[int] = Field(default=None, ge=1, le=5, strict=True)
+    comment: Optional[str] = Field(default=None, max_length=2000)
+
+
+@router.post('/public/feedback')
+async def save_public_widget_feedback(
+    request: Request,
+    form_data: PublicWidgetFeedbackForm,
+    http_response: Response,
+    token: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_session),
+):
+    _ensure_public_request_size(request)
+    widget, _ = await _get_public_widget(request, db, token=token, widget_id=form_data.widget_id)
+    _set_public_cors_headers(http_response, request, widget)
+    await _ensure_public_rate_limit(request, widget, form_data.visitor_id)
+    session = await ChatWidgetSessions.get_session_by_id_and_widget_id(form_data.session_id, widget.id, db=db)
+    if not session or session.visitor_id != form_data.visitor_id:
+        raise HTTPException(404, detail=ERROR_MESSAGES.NOT_FOUND)
+    message = await db.get(ChatWidgetMessage, form_data.message_id)
+    if (not message or message.widget_id != widget.id or message.session_id != session.id
+            or message.role != 'assistant' or not message.done or message.error):
+        raise HTTPException(404, detail=ERROR_MESSAGES.NOT_FOUND)
+    message.feedback_vote = form_data.vote
+    message.feedback = {'score': form_data.score, 'comment': (form_data.comment or '').strip() or None,
+                        'updated_at': int(time.time())}
+    await db.commit()
+    return {'vote': message.feedback_vote, **message.feedback}
+
+
+@router.get('/{widget_id}/feedback')
+async def get_widget_feedback(
+    widget_id: str,
+    vote: Optional[Literal['-1', '1']] = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    widget = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
+    if not widget:
+        raise HTTPException(404, detail=ERROR_MESSAGES.NOT_FOUND)
+    question = aliased(ChatWidgetMessage)
+    statement = (select(ChatWidgetMessage, question, ChatWidgetSession).join(
+        ChatWidgetSession, ChatWidgetSession.id == ChatWidgetMessage.session_id).outerjoin(question,
+            (question.id == ChatWidgetMessage.parent_message_id) &
+            (question.session_id == ChatWidgetMessage.session_id) &
+            (question.widget_id == ChatWidgetMessage.widget_id)))
+    statement = statement.where(ChatWidgetMessage.widget_id == widget.id,
+                                ChatWidgetMessage.feedback_vote.is_not(None))
+    if vote is not None:
+        statement = statement.where(ChatWidgetMessage.feedback_vote == int(vote))
+    rows = (await db.execute(statement.order_by(ChatWidgetMessage.created_at.desc(),
+            ChatWidgetMessage.id.desc()).offset(skip).limit(limit + 1))).all()
+    return {'has_more': len(rows) > limit, 'items': [
+        {'answer': ChatWidgetMessageModel.model_validate(answer),
+         'question': ChatWidgetMessageModel.model_validate(prompt) if prompt else None,
+         'visitor_id': session.visitor_id, 'chat_id': session.chat_id}
+        for answer, prompt, session in rows[:limit]]}
+
+
 @router.get('/{widget_id}/sessions', response_model=list[ChatWidgetSessionModel])
 async def get_widget_sessions(
     widget_id: str,
@@ -837,7 +953,7 @@ async def get_widget_sessions(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    widget = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
@@ -856,7 +972,7 @@ async def get_widget_session_messages(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    widget = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
@@ -875,7 +991,7 @@ async def delete_widget_session(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    widget = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
@@ -902,7 +1018,7 @@ async def get_widget_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    widget = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
     return widget
@@ -919,7 +1035,7 @@ async def update_widget_by_id(
     if form_data.model_id is not None:
         await _ensure_model_access(request, form_data.model_id, user, db)
 
-    existing = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    existing = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
     effective_enabled = form_data.mcp_enabled if form_data.mcp_enabled is not None else existing.mcp_enabled
@@ -929,7 +1045,7 @@ async def update_widget_by_id(
     if form_data.mcp_tool_ids is not None:
         await _ensure_mcp_tool_access(request, form_data.mcp_tool_ids, user, db)
 
-    widget = await ChatWidgets.update_widget_by_id_and_user_id(widget_id, user.id, form_data, db=db)
+    widget = await ChatWidgets.update_widget_by_id_and_user_id(widget_id, existing.user_id, form_data, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
     return widget
@@ -941,7 +1057,7 @@ async def delete_widget_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget = await ChatWidgets.get_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    widget = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
 
@@ -952,7 +1068,7 @@ async def delete_widget_by_id(
     await ChatWidgetCrawlRuns.delete_runs_by_widget_id(widget.id, db=db)
     await ChatWidgetCrawlConfigs.delete_by_widget_id(widget.id, db=db)
 
-    deleted = await ChatWidgets.delete_widget_by_id_and_user_id(widget_id, user.id, db=db)
+    deleted = await ChatWidgets.delete_widget_by_id_and_user_id(widget_id, widget.user_id, db=db)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
     return True
@@ -964,7 +1080,10 @@ async def rotate_widget_token(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    widget = await ChatWidgets.rotate_token_by_id_and_user_id(widget_id, user.id, db=db)
+    existing = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+    widget = await ChatWidgets.rotate_token_by_id_and_user_id(widget_id, existing.user_id, db=db)
     if not widget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
     return widget

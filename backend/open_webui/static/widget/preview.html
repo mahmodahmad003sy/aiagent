@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="referrer" content="same-origin" />
+		<title>Chatbot preview</title>
+		<style>
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: #f8fafc;
+				color: #172033;
+				font:
+					16px/1.6 system-ui,
+					sans-serif;
+			}
+			main {
+				max-width: 640px;
+				margin: 10vh auto;
+				padding: 32px;
+			}
+			small {
+				font-weight: 600;
+				letter-spacing: 0.12em;
+				color: #64748b;
+				text-transform: uppercase;
+			}
+			h1 {
+				font-size: clamp(28px, 5vw, 44px);
+				line-height: 1.2;
+				margin: 16px 0;
+			}
+			p {
+				color: #64748b;
+			}
+			button {
+				border: 1px solid #cbd5e1;
+				background: white;
+				padding: 10px 16px;
+				border-radius: 8px;
+				cursor: pointer;
+				font: inherit;
+			}
+			button:focus-visible {
+				outline: 3px solid #2563eb;
+			}
+			#status {
+				font-size: 14px;
+			}
+			#error {
+				color: #b91c1c;
+			}
+			@media (min-width: 1000px) {
+				main {
+					margin-left: 8vw;
+					margin-right: 460px;
+				}
+			}
+		</style>
+		<script src="/api/v1/widgets/public/preview.js" defer></script>
+	</head>
+	<body>
+		<main>
+			<small>Live chatbot preview</small>
+			<h1 id="name">Your chatbot, ready to try</h1>
+			<p>
+				Try the chat bubble to see the same experience your website visitors will get. Messages and
+				feedback are saved to this chatbot's conversations.
+			</p>
+			<button id="copy" type="button" hidden>Copy preview link</button>
+			<p id="status" role="status">Loading chatbot…</p>
+			<p id="error" role="alert"></p>
+		</main>
+	</body>
+</html>

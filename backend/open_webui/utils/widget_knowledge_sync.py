@@ -77,7 +77,7 @@ async def ensure_widget_knowledge(widget: ChatWidgetModel, owner) -> str:
             name=f'Widget: {widget.name} (website)'[:100],
             description=(
                 f'Managed automatically by chat widget "{widget.name}" ({widget.id}). '
-                'Changes made here are overwritten by Extend Knowledge.'
+                'Crawl sources are synchronized by Extend Knowledge. Local uploads are preserved.'
             ),
             access_grants=[],
         ),

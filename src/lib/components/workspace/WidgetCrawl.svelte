@@ -61,6 +61,7 @@
 		timeout: 'Timeout',
 		blocked: 'Blocked or unresolvable address',
 		connection_error: 'Connection error',
+		no_text: 'No readable text extracted',
 		too_many_redirects: 'Too many redirects',
 		redirect_off_site: 'Redirected to another site'
 	};
@@ -104,6 +105,7 @@
 	let items: CrawlItem[] = [];
 	let itemsKey = '';
 	let settings: CrawlSettings = canonicalCrawlSettings(DEFAULT_CRAWL_SETTINGS);
+	let extraUrlsText = '';
 	let includePathsText = '';
 	let excludePathsText = '';
 	let saving = false;
@@ -124,6 +126,7 @@
 
 	$: formSettings = canonicalCrawlSettings({
 		...settings,
+		extra_urls: parseLines(extraUrlsText),
 		include_paths: parseLines(includePathsText),
 		exclude_paths: parseLines(excludePathsText)
 	});
@@ -167,7 +170,7 @@
 		(item.kind === 'file' && item.status === 'supported');
 
 	const humanSize = (bytes: number | null | undefined) => {
-		if (bytes === null || bytes === undefined) return '—';
+		if (bytes === null || bytes === undefined) return 'â€”';
 		const units = ['B', 'KB', 'MB', 'GB'];
 		let value = bytes;
 		let unit = 0;
@@ -194,7 +197,7 @@
 		let text = $i18n.t(STATUS_LABELS[item.status] ?? item.status);
 		if (item.http_status) text = `${text} (${item.http_status})`;
 		if (item.extract_status) {
-			text = `${text} · ${$i18n.t(EXTRACT_LABELS[item.extract_status] ?? item.extract_status)}`;
+			text = `${text} Â· ${$i18n.t(EXTRACT_LABELS[item.extract_status] ?? item.extract_status)}`;
 		}
 		return text;
 	};
@@ -214,7 +217,7 @@
 	};
 
 	const formatTime = (seconds: number | null | undefined) =>
-		seconds ? new Date(seconds * 1000).toLocaleString() : '—';
+		seconds ? new Date(seconds * 1000).toLocaleString() : 'â€”';
 
 	const applySettings = (value: CrawlSettings | null) => {
 		const fallbackDomain = (widget.allowed_domains ?? []).find(
@@ -227,6 +230,7 @@
 			}
 		);
 		settings = next;
+		extraUrlsText = next.extra_urls.join('\n');
 		includePathsText = next.include_paths.join('\n');
 		excludePathsText = next.exclude_paths.join('\n');
 	};
@@ -432,6 +436,25 @@
 		</div>
 	{:else}
 		<div class="space-y-4 p-4">
+            <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700 space-y-2">
+                <label class="block">
+                    <div class={labelClass}>{$i18n.t('Crawling service')}</div>
+                    <select class={inputClass} bind:value={settings.crawl_provider} disabled={jobActive}>
+                        <option value="standard">{$i18n.t('Standard — local crawler')}</option>
+                        <option value="vip">{$i18n.t('VIP — paid 2Captcha scraper')}</option>
+                    </select>
+                </label>
+                {#if settings.crawl_provider === 'vip'}
+                    <p class="text-xs text-amber-700 dark:text-amber-300">{$i18n.t('Paid service: each page can consume your provider balance, including failed tasks. Set a small maximum page count first. Pages are processed one at a time. Pending tasks are followed without duplicate submissions.')}</p>
+                    <p class="text-xs font-medium">{$i18n.t('Maximum paid page tasks this crawl')}: {settings.max_pages}</p>
+                    <p class="text-xs text-gray-500">{$i18n.t('An administrator must configure SCRAPER_API_KEY on the server. Sitemap, robots and file requests still use the local crawler.')}</p>
+                    <label class="block">
+                        <div class={labelClass}>{$i18n.t('Wait for content (optional CSS selector)')}</div>
+                        <input class={inputClass} bind:value={settings.vip_wait_selector} disabled={jobActive} placeholder={'a[href*="/en/details/"]'} />
+                        <p class="mt-1 text-xs text-gray-500">{$i18n.t('For EPC home, use a[href*="/en/details/"]. Choose a selector present on every page you crawl, or leave blank.')}</p>
+                    </label>
+                {/if}
+            </div>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<div class="space-y-3">
 					<label class="block">
@@ -444,6 +467,20 @@
 						/>
 					</label>
 
+					<label class="block">
+						<div class={labelClass}>Extra page URLs (optional)</div>
+						<textarea
+							class={inputClass}
+							bind:value={extraUrlsText}
+							rows="4"
+							disabled={jobActive}
+							placeholder="https://another-site.com/page-one&#10;https://another-site.com/page-two"
+						></textarea>
+						<p class="mt-1 text-xs text-gray-500">
+							One URL per line, up to 50. These exact pages may be on other websites. Their links
+							are not followed. They share the crawl limits and appear in results for selection.
+						</p>
+					</label>
 					<div class="grid grid-cols-2 gap-3">
 						<label class="block">
 							<div class={labelClass}>{$i18n.t('Crawl depth')}</div>
@@ -594,6 +631,13 @@
 								disabled={jobActive}
 							/>
 						</label>
+                        <div class="col-span-2 text-xs text-gray-500">
+                            {$i18n.t('For HTTP 429, try a 3000 ms delay and 1 parallel request. For slow sites, try a 60–120 second timeout. Retries respect Retry-After up to 5 minutes; longer waits require a later re-crawl. Website access restrictions may still prevent crawling.')}
+                        </div>
+                        <label class="block">
+                            <div class={labelClass}>{$i18n.t('Retries for rate limits and timeouts')}</div>
+                            <input type="number" min="0" max="5" class={inputClass} bind:value={settings.max_retries} disabled={jobActive} />
+                        </label>
 						<label class="block">
 							<div class={labelClass}>{$i18n.t('Request timeout (seconds)')}</div>
 							<input
@@ -606,7 +650,7 @@
 							/>
 						</label>
 						<label class="block">
-							<div class={labelClass}>{$i18n.t('Delay between requests (ms)')}</div>
+							<div class={labelClass}>{$i18n.t('Minimum interval between requests (ms)')}</div>
 							<input
 								type="number"
 								min="0"
@@ -615,6 +659,9 @@
 								bind:value={settings.request_delay_ms}
 								disabled={jobActive}
 							/>
+                            <div class="mt-1 text-xs text-gray-500">
+                                {$i18n.t('Minimum time between crawler HTTP request starts, shared across parallel workers in this crawl. 3000 ms means at most one request every 3 seconds. JavaScript browser resources use separate requests.')}
+                            </div>
 						</label>
 						<label class="col-span-2 block">
 							<div class={labelClass}>{$i18n.t('JavaScript rendering')}</div>
@@ -699,16 +746,16 @@
 						</span>
 						{#if crawlActive && currentRun.progress?.phase}
 							<span class="text-gray-500">
-								· {$i18n.t(PHASE_LABELS[currentRun.progress.phase] ?? currentRun.progress.phase)}
+								Â· {$i18n.t(PHASE_LABELS[currentRun.progress.phase] ?? currentRun.progress.phase)}
 							</span>
 						{/if}
 					</div>
 					{#if crawlActive}
 						<div class="mt-1 text-xs text-gray-500">
-							{$i18n.t('Pages')}: {currentRun.progress?.pages ?? 0} · {$i18n.t('Files')}:
-							{currentRun.progress?.files ?? 0} · {$i18n.t('Other resources')}:
-							{currentRun.progress?.resources ?? 0} · {$i18n.t('Errors')}:
-							{currentRun.progress?.errors ?? 0} · {$i18n.t('Downloaded')}:
+							{$i18n.t('Pages')}: {currentRun.progress?.pages ?? 0} Â· {$i18n.t('Files')}:
+							{currentRun.progress?.files ?? 0} Â· {$i18n.t('Other resources')}:
+							{currentRun.progress?.resources ?? 0} Â· {$i18n.t('Errors')}:
+							{currentRun.progress?.errors ?? 0} Â· {$i18n.t('Downloaded')}:
 							{humanSize(currentRun.progress?.bytes_downloaded ?? 0)}
 						</div>
 					{/if}
@@ -812,20 +859,20 @@
 									)}
 								</span>
 								{#if extendActive}
-									· {resultsRun.extend_progress?.done ?? 0} / {resultsRun.extend_progress?.total ??
+									Â· {resultsRun.extend_progress?.done ?? 0} / {resultsRun.extend_progress?.total ??
 										0}
 								{/if}
 								{#if !extendActive && resultsRun.extend_status !== 'failed'}
-									· {$i18n.t('Embedded')}: {resultsRun.extend_progress?.embedded ?? 0} · {$i18n.t(
+									Â· {$i18n.t('Embedded')}: {resultsRun.extend_progress?.embedded ?? 0} Â· {$i18n.t(
 										'Unchanged'
-									)}: {resultsRun.extend_progress?.unchanged ?? 0} · {$i18n.t('Removed')}:
-									{resultsRun.extend_progress?.removed ?? 0} · {$i18n.t('No text')}:
-									{resultsRun.extend_progress?.no_text ?? 0} · {$i18n.t('Failed')}:
-									{resultsRun.extend_progress?.failed ?? 0} · {$i18n.t('Skipped')}:
+									)}: {resultsRun.extend_progress?.unchanged ?? 0} Â· {$i18n.t('Removed')}:
+									{resultsRun.extend_progress?.removed ?? 0} Â· {$i18n.t('No text')}:
+									{resultsRun.extend_progress?.no_text ?? 0} Â· {$i18n.t('Failed')}:
+									{resultsRun.extend_progress?.failed ?? 0} Â· {$i18n.t('Skipped')}:
 									{resultsRun.extend_progress?.skipped_limit ?? 0}
 								{/if}
 								{#if resultsRun.extend_status === 'failed' && resultsRun.extend_error}
-									· {resultsRun.extend_error}
+									Â· {resultsRun.extend_error}
 								{/if}
 							</div>
 						{/if}
@@ -919,7 +966,7 @@
 													title={item.url}>{item.url}</a
 												>
 											</td>
-											<td class="px-3 py-2">{item.depth ?? '—'}</td>
+											<td class="px-3 py-2">{item.depth ?? 'â€”'}</td>
 											<td class="px-3 py-2 {statusClass(item)}" title={item.extract_error ?? ''}>
 												{statusText(item)}
 											</td>
@@ -952,9 +999,9 @@
 												/>
 											</td>
 											<td class="max-w-48 truncate px-3 py-2" title={item.name ?? ''}>
-												{item.name ?? '—'}
+												{item.name ?? 'â€”'}
 											</td>
-											<td class="px-3 py-2">{(item.file_type ?? '').toUpperCase() || '—'}</td>
+											<td class="px-3 py-2">{(item.file_type ?? '').toUpperCase() || 'â€”'}</td>
 											<td class="px-3 py-2">{humanSize(item.size)}</td>
 											<td class="max-w-64 truncate px-3 py-2">
 												<a
@@ -975,7 +1022,7 @@
 														title={item.found_on}>{item.found_on_title || item.found_on}</a
 													>
 												{:else}
-													—
+													â€”
 												{/if}
 											</td>
 											<td class="px-3 py-2 {statusClass(item)}" title={item.extract_error ?? ''}>
@@ -1001,9 +1048,9 @@
 									{#each visibleItems as item (item.id)}
 										<tr class="border-b border-gray-50 align-top dark:border-gray-900">
 											<td class="max-w-48 truncate px-3 py-2" title={item.name ?? ''}>
-												{item.name ?? '—'}
+												{item.name ?? 'â€”'}
 											</td>
-											<td class="px-3 py-2">{item.file_type ?? '—'}</td>
+											<td class="px-3 py-2">{item.file_type ?? 'â€”'}</td>
 											<td class="max-w-64 truncate px-3 py-2">
 												<a
 													class="hover:underline"
@@ -1023,13 +1070,13 @@
 														title={item.found_on}>{item.found_on_title || item.found_on}</a
 													>
 												{:else}
-													—
+													â€”
 												{/if}
 											</td>
 											<td class="px-3 py-2">{humanSize(item.size)}</td>
 											<td class="max-w-80 px-3 py-2">
 												<div class="truncate" title={item.link_text ?? ''}>
-													{item.link_text ?? '—'}
+													{item.link_text ?? 'â€”'}
 												</div>
 												{#if item.context}
 													<div class="line-clamp-2 text-gray-500" title={item.context}>
@@ -1073,11 +1120,16 @@
 														title={item.found_on}>{item.found_on_title || item.found_on}</a
 													>
 												{:else}
-													—
+													â€”
 												{/if}
 											</td>
-											<td class="px-3 py-2 {statusClass(item)}">{statusText(item)}</td>
-											<td class="px-3 py-2">{item.depth ?? '—'}</td>
+											<td class="px-3 py-2 {statusClass(item)}">
+												{statusText(item)}
+												{#if item.context}
+													<div class="mt-1 max-w-80 text-xs">{item.context}</div>
+												{/if}
+											</td>
+											<td class="px-3 py-2">{item.depth ?? 'â€”'}</td>
 										</tr>
 									{/each}
 								</tbody>

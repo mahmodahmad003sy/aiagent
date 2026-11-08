@@ -102,6 +102,10 @@ class ChatWidgetTheme(BaseModel):
     header_subtitle: Optional[str] = Field(default=None, max_length=80)
     input_placeholder: str = Field(default='Type a message', min_length=1, max_length=120)
     show_status: bool = True
+    feedback_enabled: bool = True
+    feedback_style: Literal['icons', 'labels'] = 'icons'
+    feedback_score: bool = True
+    feedback_comment: bool = True
 
     @field_validator(
         'primary_color',
@@ -218,6 +222,9 @@ class ChatWidgetMessage(Base):
     id = Column(Text, primary_key=True, unique=True)
     session_id = Column(Text, ForeignKey('chat_widget_session.id', ondelete='CASCADE'), nullable=False, index=True)
     widget_id = Column(Text, ForeignKey('chat_widget.id', ondelete='CASCADE'), nullable=False, index=True)
+    parent_message_id = Column(Text, nullable=True)
+    feedback_vote = Column(BigInteger, nullable=True, index=True)
+    feedback = Column(JSON, nullable=True)
     role = Column(Text, nullable=False)
     content = Column(JSON, nullable=True)
     model_id = Column(Text, nullable=True, index=True)
@@ -296,6 +303,9 @@ class ChatWidgetSessionModel(BaseModel):
 
 
 class ChatWidgetMessageModel(BaseModel):
+    parent_message_id: Optional[str] = None
+    feedback_vote: Optional[int] = None
+    feedback: Optional[dict] = None
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -374,6 +384,7 @@ class ChatWidgetSessionForm(BaseModel):
 
 
 class ChatWidgetMessageForm(BaseModel):
+    parent_message_id: Optional[str] = None
     role: str
     content: Optional[Any] = None
     model_id: Optional[str] = None
@@ -417,6 +428,18 @@ class ChatWidgetTable:
             result = await db.execute(select(ChatWidget).filter_by(id=id, user_id=user_id))
             widget = result.scalars().first()
             return ChatWidgetModel.model_validate(widget) if widget else None
+
+    async def get_widget_for_user(
+        self, id: str, user, db: Optional[AsyncSession] = None
+    ) -> Optional[ChatWidgetModel]:
+        if user.role == 'admin':
+            return await self.get_widget_by_id(id, db=db)
+        return await self.get_widget_by_id_and_user_id(id, user.id, db=db)
+
+    async def get_widgets(self, db: Optional[AsyncSession] = None) -> list[ChatWidgetModel]:
+        async with get_async_db_context(db) as db:
+            result = await db.execute(select(ChatWidget).order_by(ChatWidget.updated_at.desc()))
+            return [ChatWidgetModel.model_validate(widget) for widget in result.scalars().all()]
 
     async def get_widget_by_token(self, token: str, db: Optional[AsyncSession] = None) -> Optional[ChatWidgetModel]:
         async with get_async_db_context(db) as db:

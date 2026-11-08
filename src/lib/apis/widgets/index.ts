@@ -35,6 +35,10 @@ export type ChatWidgetTheme = {
 	header_subtitle: string | null;
 	input_placeholder: string;
 	show_status: boolean;
+	feedback_enabled: boolean;
+	feedback_style: 'icons' | 'labels';
+	feedback_score: boolean;
+	feedback_comment: boolean;
 };
 
 // Must match backend ChatWidgetTheme defaults exactly.
@@ -64,7 +68,11 @@ export const DEFAULT_WIDGET_THEME: ChatWidgetTheme = {
 	header_title: null,
 	header_subtitle: null,
 	input_placeholder: 'Type a message',
-	show_status: true
+	show_status: true,
+	feedback_enabled: true,
+	feedback_style: 'icons',
+	feedback_score: true,
+	feedback_comment: true
 };
 
 // Must match FONT_STACKS in backend/open_webui/static/widget/chat-widget.js exactly.
@@ -131,6 +139,9 @@ export type ChatWidgetSession = {
 };
 
 export type ChatWidgetMessage = {
+	parent_message_id?: string | null;
+	feedback_vote?: number | null;
+	feedback?: { score: number | null; comment: string | null; updated_at: number } | null;
 	id: string;
 	session_id: string;
 	widget_id: string;
@@ -394,4 +405,29 @@ export const deleteChatWidgetSession = async (
 
 	if (error) throw error;
 	return res;
+};
+
+export type ChatWidgetFeedbackEntry = {
+	visitor_id: string;
+	chat_id: string | null;
+	answer: ChatWidgetMessage;
+	question: ChatWidgetMessage | null;
+};
+
+export const getChatWidgetFeedback = async (
+	token: string,
+	widgetId: string,
+	vote = '',
+	skip = 0
+): Promise<{ items: ChatWidgetFeedbackEntry[]; has_more: boolean }> => {
+	const query = new URLSearchParams({ skip: String(skip), limit: '25' });
+	if (vote) query.set('vote', vote);
+	const response = await fetch(
+		`${WEBUI_API_BASE_URL}/widgets/${encodeURIComponent(widgetId)}/feedback?${query}`,
+		{
+			headers: { authorization: `Bearer ${token}` }
+		}
+	);
+	if (!response.ok) throw await parseError(response);
+	return response.json();
 };

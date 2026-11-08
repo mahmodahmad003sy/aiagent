@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urljoin, urlsplit
+from urllib.request import getproxies
 from urllib.robotparser import RobotFileParser
 
 import aiohttp
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
-from open_webui.retrieval.web.utils import get_ssrf_safe_session, validate_url
+from open_webui.retrieval.web.utils import get_ssrf_safe_session, validate_url, _SSRFSafeConnector
 from open_webui.utils.widget_crawl_urls import (
     CRAWLER_ROBOTS_TOKEN,
     CRAWLER_USER_AGENT,
@@ -21,6 +27,34 @@ from open_webui.utils.widget_crawl_urls import (
 )
 
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+log = logging.getLogger(__name__)
+
+
+def widget_http_session():
+    """Only an administrator can opt in to the server's trusted proxy configuration.
+
+    Destination URLs remain validated. A proxy resolves destinations remotely, so
+    the administrator must ensure that proxy also blocks internal destinations.
+    """
+    if os.environ.get('WIDGET_CRAWLER_TRUST_ENV', 'false').lower() != 'true':
+        return get_ssrf_safe_session(trust_env=False, store_cookies=False)
+    proxies = getproxies()
+    proxy_endpoints = set()
+    for scheme in ('http', 'https'):
+        value = proxies.get(scheme)
+        if value:
+            parsed = urlsplit(value if '://' in value else 'http://' + value)
+            if parsed.hostname:
+                proxy_endpoints.add((parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80)))
+
+    class TrustedProxyConnector(_SSRFSafeConnector):
+        async def _resolve_host(self, host, port, traces=None):
+            if (host, port) in proxy_endpoints:
+                return await aiohttp.TCPConnector._resolve_host(self, host, port, traces=traces)
+            return await super()._resolve_host(host, port, traces=traces)
+
+    return aiohttp.ClientSession(connector=TrustedProxyConnector(), trust_env=True,
+                                 cookie_jar=aiohttp.DummyCookieJar())
 
 
 @dataclass
@@ -31,6 +65,8 @@ class FetchResult:
     content_type: str = ''
     content_length: Optional[int] = None
     body: bytes = b''
+    error: Optional[str] = None
+    retry_after: Optional[float] = None
 
 
 def _parse_int(value: Optional[str]) -> Optional[int]:
@@ -41,21 +77,46 @@ def _parse_int(value: Optional[str]) -> Optional[int]:
 
 
 class CrawlFetcher:
-    def __init__(self, timeout_seconds: int):
+    def __init__(self, timeout_seconds: int, request_delay_ms: int = 0, max_retries: int = 2):
+        self.delay = request_delay_ms / 1000
+        self.max_retries = max_retries
+        self._pace_lock = asyncio.Lock()
+        self._next_request = 0.0
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self.session: Optional[aiohttp.ClientSession] = None
         self._robots: dict[str, Optional[RobotFileParser]] = {}
         self._robots_lock = asyncio.Lock()
 
     async def __aenter__(self) -> 'CrawlFetcher':
-        self.session = get_ssrf_safe_session(trust_env=False, store_cookies=False)
+        self.session = widget_http_session()
         return self
 
     async def __aexit__(self, *exc) -> None:
         if self.session:
             await self.session.close()
 
-    async def fetch(
+    async def _pace(self):
+        async with self._pace_lock:
+            while self._next_request > time.monotonic():
+                await asyncio.sleep(self._next_request - time.monotonic())
+            self._next_request = time.monotonic() + self.delay
+
+    async def fetch(self, url: str, method: str = 'GET',
+                    max_bytes: int = MAX_PAGE_BYTES, read_body: bool = True) -> FetchResult:
+        for attempt in range(self.max_retries + 1):
+            result = await self._fetch_once(url, method, max_bytes, read_body)
+            if result.http_status != 429 and result.status != 'timeout':
+                return result
+            delay = max(result.retry_after or 0, 5 * (2 ** attempt))
+            if result.http_status == 429:
+                # Share the cooldown with all workers, including sitemap/file requests.
+                self._next_request = max(self._next_request, time.monotonic() + delay)
+            if attempt == self.max_retries or delay > 300:
+                return result
+            await asyncio.sleep(delay)
+        return result
+
+    async def _fetch_once(
         self,
         url: str,
         method: str = 'GET',
@@ -70,6 +131,7 @@ class CrawlFetcher:
                 return FetchResult(url=current, status='blocked')
 
             try:
+                await self._pace()
                 async with self.session.request(
                     method,
                     current,
@@ -90,8 +152,25 @@ class CrawlFetcher:
                     content_length = _parse_int(response.headers.get('Content-Length'))
 
                     if response.status >= 400:
+                        detail = f'Website returned HTTP {response.status}.'
+                        if response.status == 429:
+                            detail += ' The website is rate limiting requests; try again later with a longer request delay and lower concurrency.'
+                        retry_after = response.headers.get('Retry-After')
+                        retry_seconds = None
+                        if retry_after:
+                            try:
+                                retry_seconds = max(0, float(retry_after))
+                            except ValueError:
+                                try:
+                                    retry_seconds = max(0, (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds())
+                                except (ValueError, TypeError, OverflowError):
+                                    pass
+                        if retry_after:
+                            detail += f' Retry-After: {retry_after[:100]}.'
+                        log.warning('Widget crawl fetch %s %s: %s', method, current, detail)
                         return FetchResult(
-                            url=current, status='http_error', http_status=response.status, content_type=content_type
+                            url=current, status='http_error', http_status=response.status, content_type=content_type,
+                            error=detail, retry_after=retry_seconds,
                         )
 
                     if method == 'HEAD' or not read_body:
@@ -134,12 +213,12 @@ class CrawlFetcher:
                         content_length=content_length if content_length is not None else total,
                         body=b''.join(chunks),
                     )
-            except asyncio.TimeoutError:
-                return FetchResult(url=current, status='timeout')
-            except ValueError:
-                return FetchResult(url=current, status='blocked')
-            except aiohttp.ClientError:
-                return FetchResult(url=current, status='connection_error')
+            except (asyncio.TimeoutError, ValueError, aiohttp.ClientError) as exc:
+                status = ('timeout' if isinstance(exc, asyncio.TimeoutError) else
+                          'blocked' if isinstance(exc, ValueError) else 'connection_error')
+                detail = f'{type(exc).__name__}: {str(exc) or "Request timed out"}'[:1000]
+                log.warning('Widget crawl fetch %s %s failed: %s', method, current, detail)
+                return FetchResult(url=current, status=status, error=detail)
 
         return FetchResult(url=current, status='too_many_redirects')
 

@@ -60,7 +60,10 @@ def _normalize_paths(value: list[str] | None) -> list[str]:
 class ChatWidgetCrawlSettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
+    crawl_provider: Literal['standard', 'vip'] = 'standard'
+    vip_wait_selector: str = Field(default='', max_length=500)
     start_url: str = Field(min_length=1, max_length=2048)
+    extra_urls: list[str] = Field(default_factory=list, max_length=50)
     max_depth: int = Field(default=2, ge=0, le=5)
     max_pages: int = Field(default=100, ge=1, le=1000)
     same_domain_only: bool = True
@@ -72,6 +75,7 @@ class ChatWidgetCrawlSettings(BaseModel):
     allowed_file_types: list[CrawlFileType] = Field(default_factory=lambda: list(SUPPORTED_FILE_TYPES))
     max_file_size_mb: int = Field(default=20, ge=1, le=100)
     max_total_size_mb: int = Field(default=500, ge=10, le=5000)
+    max_retries: int = Field(default=2, ge=0, le=5)
     request_timeout: int = Field(default=20, ge=5, le=120)
     request_delay_ms: int = Field(default=500, ge=0, le=10000)
     max_concurrency: int = Field(default=2, ge=1, le=5)
@@ -84,6 +88,18 @@ class ChatWidgetCrawlSettings(BaseModel):
         if not normalized:
             raise ValueError('Website URL must be a valid http(s) URL')
         return normalized
+
+    @field_validator('extra_urls')
+    @classmethod
+    def validate_extra_urls(cls, values: list[str]) -> list[str]:
+        result = []
+        for value in values:
+            normalized = normalize_url(value)
+            if not normalized or len(normalized) > 2048:
+                raise ValueError('Extra URLs must be valid http(s) URLs under 2048 characters')
+            if normalized not in result:
+                result.append(normalized)
+        return result
 
     @field_validator('include_paths', 'exclude_paths')
     @classmethod

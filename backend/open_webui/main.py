@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 
 import asyncio
 import copy
@@ -3133,6 +3134,15 @@ mimetypes.add_type('text/javascript', '.mjs')
 mimetypes.add_type('application/wasm', '.wasm')
 
 # Serve build-time static assets (CSS, JS, images, favicon, etc.)
+@app.get('/preview/{widget_id}', include_in_schema=False)
+async def widget_preview_page(widget_id: str):
+    return FileResponse(
+        Path(__file__).resolve().parent / 'static/widget/preview.html',
+        media_type='text/html',
+        headers={'Referrer-Policy': 'same-origin', 'Cache-Control': 'no-store'},
+    )
+
+
 app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
 
 

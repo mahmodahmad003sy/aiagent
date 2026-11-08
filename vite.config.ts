@@ -40,9 +40,11 @@ export default defineConfig({
 			allow: [searchForWorkspaceRoot(process.cwd())]
 		},
 		proxy: {
+			'/preview': { target: backendTarget, changeOrigin: false },
+			'/static/widget': { target: backendTarget, changeOrigin: false },
 			'/api': {
 				target: backendTarget,
-				changeOrigin: true,
+				changeOrigin: false,
 				ws: true
 			},
 			'/ollama': {

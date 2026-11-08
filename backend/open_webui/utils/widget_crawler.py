@@ -10,7 +10,8 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from open_webui.models.chat_widget_crawl import ChatWidgetCrawlItems, ChatWidgetCrawlRuns, ChatWidgetCrawlSettings
-from open_webui.utils.widget_crawl_fetch import CrawlFetcher
+from open_webui.utils.widget_crawl_fetch import CrawlFetcher, FetchResult
+from open_webui.utils.widget_crawl_vip import fetch_vip
 from open_webui.utils.widget_crawl_render import CrawlRenderer, needs_rendering
 from open_webui.utils.widget_crawl_urls import (
     HTML_CONTENT_TYPES,
@@ -168,9 +169,9 @@ class WidgetCrawler:
         self.settings = settings
         self.cancel_event = cancel_event
         self.start_url = settings.start_url
+        self.extra_urls = set(settings.extra_urls) - {self.start_url}
         self.max_total_bytes = settings.max_total_size_mb * 1024 * 1024
         self.max_file_bytes = settings.max_file_size_mb * 1024 * 1024
-        self.delay_seconds = settings.request_delay_ms / 1000
         self.items: dict[str, dict] = {}
         self.seen: set[str] = set()
         self.files_to_probe: list[str] = []
@@ -218,7 +219,7 @@ class WidgetCrawler:
 
     async def crawl(self) -> None:
         async with (
-            CrawlFetcher(self.settings.request_timeout) as fetcher,
+            CrawlFetcher(self.settings.request_timeout, self.settings.request_delay_ms, self.settings.max_retries) as fetcher,
             CrawlRenderer(self.settings.request_timeout) as renderer,
         ):
             self.fetcher = fetcher
@@ -233,19 +234,22 @@ class WidgetCrawler:
             self.phase = 'pages'
             self.seen.add(self.start_url)
             level: list[tuple[str, Optional[str], Optional[str]]] = [(self.start_url, None, None)]
+            # Explicit external pages are visited once; their links do not broaden the crawl.
+            for extra_url in self.settings.extra_urls:
+                if extra_url not in self.seen:
+                    self.seen.add(extra_url)
+                    level.append((extra_url, None, None))
             depth = 0
             while level and depth <= self.settings.max_depth:
                 self.check_cancel()
                 self.queued = len(level)
                 await self.save_progress()
 
-                semaphore = asyncio.Semaphore(self.settings.max_concurrency)
+                semaphore = asyncio.Semaphore(1 if self.settings.crawl_provider == 'vip' else self.settings.max_concurrency)
 
                 async def crawl_entry(entry, entry_depth=depth):
                     async with semaphore:
-                        links, fetched = await self.crawl_page(entry, entry_depth)
-                        if fetched and self.delay_seconds:
-                            await asyncio.sleep(self.delay_seconds)
+                        links, _ = await self.crawl_page(entry, entry_depth)
                         return links
 
                 next_level = []
@@ -387,7 +391,10 @@ class WidgetCrawler:
         depth: int,
         found_on: Optional[str],
         found_on_title: Optional[str],
+        detail: Optional[str] = None,
     ) -> None:
+        log.warning('Widget crawl %s: %s failed (%s, HTTP %s): %s',
+                    self.run_id, url, status, http_status, detail or status)
         if self.error_count >= MAX_ERROR_ITEMS:
             return
         self.error_count += 1
@@ -400,6 +407,7 @@ class WidgetCrawler:
             found_on_title=found_on_title,
             status=status,
             http_status=http_status,
+            context=detail,
         )
 
     async def crawl_page(self, entry: tuple[str, Optional[str], Optional[str]], depth: int) -> tuple[list, bool]:
@@ -422,18 +430,28 @@ class WidgetCrawler:
             self.add_error(url, 'robots_disallowed', None, depth, found_on, found_on_title)
             return [], False
 
-        result = await self.fetcher.fetch(url, max_bytes=MAX_PAGE_BYTES)
+        result, already_rendered = await self.fetch_page(url)
         self.bytes_downloaded += len(result.body)
         if result.status != 'ok':
-            self.add_error(url, result.status, result.http_status, depth, found_on, found_on_title)
+            self.add_error(url, result.status, result.http_status, depth, found_on, found_on_title, result.error)
             return [], True
 
         final_url = result.url
         if final_url != url:
             if final_url in self.seen:
                 return [], True
-            if self.settings.same_domain_only and not is_same_site(final_url, self.start_url):
-                self.add_error(url, 'redirect_off_site', result.http_status, depth, found_on, found_on_title)
+            if self.settings.same_domain_only and not is_same_site(final_url, url if url in self.extra_urls else self.start_url):
+                destination = urlsplit(final_url)
+                detail = (
+                    f'The website redirected to {destination._replace(query="", fragment="").geturl()}. '
+                    'This is outside the configured website domain.'
+                )
+                if destination.hostname == 'validate.perfdrive.com':
+                    detail += ' Radware bot protection is requesting verification. The website owner must allow crawler access.'
+                self.add_error(
+                    url, 'redirect_off_site', result.http_status, depth, found_on, found_on_title,
+                    detail,
+                )
                 return [], True
             self.seen.add(final_url)
 
@@ -448,7 +466,8 @@ class WidgetCrawler:
 
         html = decode_html(result.body, result.content_type)
         page = await asyncio.to_thread(parse_html_page, html, final_url)
-        page = await self.render_if_needed(html, page, final_url)
+        if not already_rendered and self.settings.crawl_provider != 'vip':
+            page = await self.render_if_needed(html, page, final_url)
 
         if page.canonical and page.canonical != final_url and is_same_site(page.canonical, final_url):
             if page.canonical in self.seen:
@@ -457,6 +476,18 @@ class WidgetCrawler:
             final_url = page.canonical
 
         title = page.title or final_url
+        if not page.text.strip():
+            detail = 'No readable text was extracted after processing the page.'
+            if self.settings.render_js == 'never':
+                detail += ' Enable JavaScript rendering for sites that require it.'
+            elif self.renderer and self.renderer.error:
+                detail += f' JavaScript rendering: {self.renderer.error}'
+            self.add_error(final_url, 'no_text', result.http_status, depth, found_on, found_on_title, detail)
+            if url in self.extra_urls:
+                return [], True
+            return [candidate for link in page.links if (candidate := self.handle_link(
+                link.url, depth + 1, final_url, title, link.text, link.context
+            ))], True
         self.items[final_url] = new_item(
             'page',
             final_url,
@@ -470,12 +501,34 @@ class WidgetCrawler:
             content_text=page.text,
         )
 
+        if url in self.extra_urls:
+            return [], True
         candidates = []
         for link in page.links:
             candidate = self.handle_link(link.url, depth + 1, final_url, title, link.text, link.context)
             if candidate:
                 candidates.append(candidate)
         return candidates, True
+
+    async def fetch_page(self, url: str) -> tuple[FetchResult, bool]:
+        if self.settings.crawl_provider == 'vip':
+            await self.fetcher._pace()
+            return await fetch_vip(url, self.settings.vip_wait_selector, MAX_PAGE_BYTES, self.check_cancel), True
+        if self.settings.render_js != 'always':
+            result = await self.fetcher.fetch(url, max_bytes=MAX_PAGE_BYTES)
+            # Auto rendering must remain reachable when the preliminary HTTP request fails.
+            if self.settings.render_js == 'never' or result.status not in {'timeout', 'connection_error'}:
+                return result, False
+        self.check_cancel()
+        await self.fetcher._pace()
+        rendered = await self.renderer.render(url)
+        self.bytes_downloaded += rendered.bytes_downloaded
+        body = rendered.html.encode('utf-8')
+        if len(body) > MAX_PAGE_BYTES:
+            return FetchResult(url=rendered.url, status='too_large'), True
+        return FetchResult(url=rendered.url, status=rendered.status,
+                           http_status=rendered.http_status, content_type='text/html; charset=utf-8',
+                           body=body, content_length=len(body), error=rendered.error), True
 
     async def render_if_needed(self, html: str, page: ParsedPage, url: str) -> ParsedPage:
         """Load client-rendered pages (React, Vite, Vue...) in a browser; keep the plain HTML result otherwise."""
@@ -485,6 +538,7 @@ class WidgetCrawler:
         rendered = await self.renderer.render(url)
         self.bytes_downloaded += rendered.bytes_downloaded
         if rendered.status != 'ok':
+            self.renderer.error = rendered.error or f'JavaScript rendering failed ({rendered.status})'
             if rendered.status != 'unavailable':
                 log.info(
                     'Widget crawl %s: rendering %s failed (%s) %s',
@@ -497,6 +551,8 @@ class WidgetCrawler:
             return ParsedPage(title=page.title, canonical=None, links=page.links, text=page.text)
 
         rendered_page = await asyncio.to_thread(parse_html_page, rendered.html, url)
+        if not rendered_page.text.strip() and rendered.error:
+            self.renderer.error = rendered.error
         log.debug(
             'Widget crawl %s: rendered %s (%d -> %d chars)', self.run_id, url, len(page.text), len(rendered_page.text)
         )
@@ -518,14 +574,12 @@ class WidgetCrawler:
         )
 
     async def probe_files(self) -> None:
-        semaphore = asyncio.Semaphore(self.settings.max_concurrency)
+        semaphore = asyncio.Semaphore(1 if self.settings.crawl_provider == 'vip' else self.settings.max_concurrency)
 
         async def probe(url: str) -> None:
             async with semaphore:
                 self.check_cancel()
                 await self.probe_file(url)
-                if self.delay_seconds:
-                    await asyncio.sleep(self.delay_seconds)
 
         await asyncio.gather(*(probe(url) for url in self.files_to_probe))
 
@@ -541,6 +595,9 @@ class WidgetCrawler:
 
         if result.status != 'ok':
             item['kind'] = 'error'
+            item['context'] = result.error
+            log.warning('Widget crawl %s: file %s failed (%s, HTTP %s): %s',
+                        self.run_id, url, result.status, result.http_status, result.error or result.status)
             item['status'] = result.status
             item['http_status'] = result.http_status
             return

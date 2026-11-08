@@ -31,6 +31,8 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ChatWidgetPreview from '$lib/components/workspace/ChatWidgetPreview.svelte';
+	import WidgetUploads from '$lib/components/workspace/WidgetUploads.svelte';
+	import WidgetFeedback from '$lib/components/workspace/WidgetFeedback.svelte';
 	import WidgetCrawl from '$lib/components/workspace/WidgetCrawl.svelte';
 	import Clipboard from '$lib/components/icons/Clipboard.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
@@ -43,6 +45,8 @@
 	let loaded = false;
 	let saving = false;
 	let widgets: ChatWidget[] = [];
+	let configTab = 'setup';
+	const configTabs = [{id: 'setup', label: 'Setup'}, {id: 'appearance', label: 'Appearance'}, {id: 'sources', label: 'Website & files'}, {id: 'feedback', label: 'Feedback'}, {id: 'conversations', label: 'Conversations'}];
 	let selectedWidget: ChatWidget | null = null;
 	let deleteTarget: ChatWidget | null = null;
 	let showDeleteConfirm = false;
@@ -116,6 +120,7 @@
 	];
 
 	const resetForm = () => {
+        configTab = 'setup';
 		selectedWidget = null;
 		conversations = [];
 		conversationMessages = [];
@@ -171,7 +176,10 @@
 		welcome_message: form.welcome_message?.trim() || null,
 		allowed_domains: normalizeDomains(),
 		mcp_tool_ids: form.mcp_enabled ? form.mcp_tool_ids : [],
-		session_idle_minutes: Math.min(Math.max(Math.round(Number(form.session_idle_minutes) || 0), 0), 1440),
+		session_idle_minutes: Math.min(
+			Math.max(Math.round(Number(form.session_idle_minutes) || 0), 0),
+			1440
+		),
 		theme: {
 			...form.theme,
 			header_title: form.theme.header_title?.trim() || null,
@@ -462,7 +470,7 @@
 
 	const baseUrl = () => (typeof window !== 'undefined' ? window.location.origin : '');
 	const buildEmbedCode = (widget: ChatWidget) =>
-		`<script src="${baseUrl()}/static/widget/chat-widget.js" data-widget-id="${widget.id}" data-token="${widget.token}" data-api-base="${baseUrl()}"><\/script>`;
+		`<script src="${baseUrl()}/api/v1/widgets/public/embed.js" data-widget-id="${widget.id}" data-token="${widget.token}" data-api-base="${baseUrl()}"><\/script>`;
 
 	const copyEmbed = async () => {
 		if (!embedCode) return;
@@ -510,7 +518,17 @@
 
 {#if loaded}
 	<div class="mx-auto w-full max-w-7xl py-3">
-		<div class="grid grid-cols-1 xl:grid-cols-[minmax(280px,420px)_1fr] gap-3">
+        <nav aria-label="Widget configuration" class="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3 dark:border-gray-800">
+            {#each configTabs as tab}
+                <button type="button" aria-pressed={configTab === tab.id}
+                    disabled={!selectedWidget && !['setup', 'appearance'].includes(tab.id)}
+                    on:click={() => configTab = tab.id}
+                    class="rounded-lg px-4 py-2 text-sm disabled:opacity-40 {configTab === tab.id ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 dark:bg-gray-850'}">{$i18n.t(tab.label)}</button>
+            {/each}
+        </nav>
+        {#if !selectedWidget}<p class="mb-3 text-xs text-gray-500">{$i18n.t('Create the widget to add website content, files and view activity.')}</p>{/if}
+
+		<div style:display={!['setup', 'appearance'].includes(configTab) ? 'none' : undefined} class="grid grid-cols-1 xl:grid-cols-[minmax(280px,420px)_1fr] gap-3">
 			<section class="min-w-0">
 				<div class="flex items-center justify-between pb-2">
 					<div class="text-lg font-medium text-gray-900 dark:text-gray-100">
@@ -606,7 +624,7 @@
 					</div>
 				</div>
 
-				<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+				<div style:display={configTab !== 'setup' ? 'none' : undefined} class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
 					<div class="space-y-3">
 						<label class="block">
 							<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -812,6 +830,15 @@
 									class="min-h-24 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs outline-none dark:border-gray-800 dark:bg-gray-900"
 									value={embedCode}
 								></textarea>
+								<a
+									class="mt-2 inline-flex rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700"
+									href={`${baseUrl()}/preview/${encodeURIComponent(selectedWidget.id)}#token=${encodeURIComponent(selectedWidget.token)}`}
+									target="_blank"
+									rel="noopener noreferrer">Preview chatbot ↗</a
+								>
+								<p class="mt-1 text-xs text-gray-500">
+									Opens a live hosted preview. Anyone with the complete link can try this chatbot.
+								</p>
 							</div>
 
 							<div>
@@ -828,7 +855,7 @@
 					</div>
 				</div>
 
-				<div class="border-t border-gray-100 p-4 dark:border-gray-850">
+				<div style:display={configTab !== 'appearance' ? 'none' : undefined} class="border-t border-gray-100 p-4 dark:border-gray-850">
 					<div class="mb-3 text-sm font-medium">{$i18n.t('Appearance')}</div>
 					<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 						<div class="space-y-4">
@@ -1000,6 +1027,48 @@
 										/>
 									</div>
 								</div>
+							</div>
+
+							<div class="space-y-3 rounded-xl border border-gray-100 p-3 dark:border-gray-800">
+								<div class="flex items-center justify-between">
+									<div>
+										<div class="text-sm font-medium">Answer feedback</div>
+										<p class="text-xs text-gray-500">Small controls below each answer.</p>
+									</div>
+									<Switch
+										bind:state={form.theme.feedback_enabled}
+										ariaLabel="Enable answer feedback"
+									/>
+								</div>
+								{#if form.theme.feedback_enabled}
+									<label class="block text-xs text-gray-500"
+										>Button style
+										<select
+											class="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+											bind:value={form.theme.feedback_style}
+										>
+											<option value="icons">Compact icons</option><option value="labels"
+												>Icons with labels</option
+											>
+										</select>
+									</label>
+									<div class="flex items-center justify-between text-sm">
+										<span>Optional 1–5 score</span><Switch
+											bind:state={form.theme.feedback_score}
+											ariaLabel="Allow optional feedback score"
+										/>
+									</div>
+									<div class="flex items-center justify-between text-sm">
+										<span>Optional comment</span><Switch
+											bind:state={form.theme.feedback_comment}
+											ariaLabel="Allow optional feedback comment"
+										/>
+									</div>
+									<p class="text-xs text-gray-500">
+										Votes save immediately. Extra fields stay collapsed until the visitor chooses
+										Add details.
+									</p>
+								{/if}
 							</div>
 
 							<div>
@@ -1208,12 +1277,18 @@
 
 		{#if selectedWidget}
 			{#key selectedWidget.id}
-				<WidgetCrawl widget={selectedWidget} />
+				<div style:display={configTab !== 'sources' ? 'none' : undefined}>
+                    <WidgetCrawl widget={selectedWidget} />
+                    <WidgetUploads widgetId={selectedWidget.id} />
+                </div>
+                <div style:display={configTab !== 'feedback' ? 'none' : undefined}>
+                    <WidgetFeedback widgetId={selectedWidget.id} />
+                </div>
 			{/key}
 		{/if}
 
 		{#if selectedWidget}
-			<section class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850">
+			<section style:display={configTab !== 'conversations' ? 'none' : undefined} class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850">
 				<div
 					class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-850"
 				>
@@ -1375,6 +1450,18 @@
 												<div class="whitespace-pre-wrap break-words">
 													{contentToText(message.content)}
 												</div>
+												{#if message.feedback_vote}
+													<div
+														class="mt-2 border-t border-gray-200 pt-2 text-xs dark:border-gray-700"
+													>
+														{message.feedback_vote === 1 ? 'Helpful' : 'Not helpful'}
+														{#if message.feedback?.score}
+															· {message.feedback.score}/5{/if}
+														{#if message.feedback?.comment}<p class="mt-1 whitespace-pre-wrap">
+																{message.feedback.comment}
+															</p>{/if}
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/each}

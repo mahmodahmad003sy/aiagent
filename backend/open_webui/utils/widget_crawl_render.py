@@ -15,7 +15,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 from open_webui.config import PLAYWRIGHT_WS_URL
@@ -26,6 +26,7 @@ from open_webui.retrieval.web.utils import (
     get_ssrf_safe_session,
     validate_url,
 )
+from open_webui.utils.widget_crawl_fetch import widget_http_session
 from open_webui.utils.widget_crawl_urls import MAX_REDIRECTS, MIN_PAGE_TEXT_CHARS
 
 log = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ class CrawlRenderer:
                     log.debug('Widget crawl renderer launch failed: %s', last_error)
                     return self._unavailable(UNAVAILABLE_MESSAGE)
 
-            self._session = get_ssrf_safe_session(trust_env=False, store_cookies=False)
+            self._session = widget_http_session()
             self.available = True
             log.info('Widget crawl: JavaScript rendering enabled (%s browser)', self.engine)
             return True
@@ -165,16 +166,28 @@ class CrawlRenderer:
         context = await self._browser.new_context(java_script_enabled=True, service_workers='block')
         # Pages render in parallel, so each counts its own downloads.
         downloaded = [0]
+        failed_resources: list[str] = []
         try:
             page = await context.new_page()
+            def record_failure(request):
+                if request.resource_type in {'document', 'script', 'stylesheet', 'fetch', 'xhr'} and len(failed_resources) < 3:
+                    address = urlsplit(request.url)._replace(query='', fragment='').geturl()
+                    failed_resources.append(address)
+            page.on('requestfailed', record_failure)
             await page.route('**/*', lambda route: self._intercept(route, downloaded))
             await page.route_web_socket('**/*', lambda ws_route: ws_route.close())
 
             try:
-                response = await page.goto(url, wait_until='domcontentloaded', timeout=self.timeout_ms)
+                # A slow third-party script can hold DOMContentLoaded past the request
+                # timeout even though the document arrived successfully. Keep that
+                # document and allow outstanding resource requests to finish or time out.
+                response = await page.goto(url, wait_until='commit', timeout=self.timeout_ms)
             except Exception as e:
                 if 'Timeout' in type(e).__name__:
-                    return RenderResult(url=url, status='timeout')
+                    return RenderResult(
+                        url=url, status='timeout',
+                        error=f'JavaScript page load timed out after {self.timeout_ms // 1000} seconds.',
+                    )
                 return RenderResult(url=url, status='failed', error=str(e)[:500])
 
             if response is None:
@@ -182,11 +195,19 @@ class CrawlRenderer:
             if response.status >= 400:
                 return RenderResult(url=page.url, status='http_error', http_status=response.status)
 
+            try:
+                await page.wait_for_load_state('domcontentloaded', timeout=self.timeout_ms)
+            except Exception as e:
+                if 'Timeout' not in type(e).__name__:
+                    raise
+                log.info('Widget crawl: DOM load timed out for %s; checking rendered content', url)
+
             await self._settle(page)
             html = await page.content()
             self.pages_rendered += 1
             return RenderResult(
-                url=page.url, status='ok', http_status=response.status, html=html, bytes_downloaded=downloaded[0]
+                url=page.url, status='ok', http_status=response.status, html=html, bytes_downloaded=downloaded[0],
+                error=('Page resources failed to load: ' + ', '.join(failed_resources)) if failed_resources else None,
             )
         except Exception as e:
             return RenderResult(url=url, status='failed', error=str(e)[:500])
@@ -225,6 +246,7 @@ class CrawlRenderer:
             await route.fulfill(status=status, headers=headers, body=body)
             return
 
+        stage = 'request headers'
         try:
             headers = _forwardable_request_headers(await request.all_headers())
             post_data = request.post_data_buffer
@@ -232,7 +254,9 @@ class CrawlRenderer:
             hop_cookies: list[tuple[str, str]] = []
             for _ in range(MAX_REDIRECTS + 1):
                 # The browser would resolve the hostname again after our check, so we fetch it ourselves.
+                stage = 'URL validation'
                 await asyncio.to_thread(validate_url, current)
+                stage = 'resource download'
                 async with self._session.request(
                     request.method,
                     current,
@@ -242,6 +266,7 @@ class CrawlRenderer:
                     timeout=self.timeout,
                     ssl=AIOHTTP_CLIENT_SESSION_SSL,
                 ) as response:
+                    stage = 'resource body'
                     location = response.headers.get('Location')
                     if response.status in REDIRECT_STATUSES and location:
                         hop_cookies += [('set-cookie', value) for value in response.headers.getall('Set-Cookie', [])]
@@ -259,11 +284,12 @@ class CrawlRenderer:
                     if cacheable and response.status == 200 and self._cache_bytes + len(body) <= MAX_CACHE_BYTES:
                         self._cache[request.url] = (response.status, fulfilled_headers, bytes(body))
                         self._cache_bytes += len(body)
+                    stage = 'browser delivery'
                     await route.fulfill(status=response.status, headers=fulfilled_headers, body=bytes(body))
                     return
             raise ValueError('Too many redirects')
         except Exception as e:
-            log.debug('Widget crawl renderer blocked or failed %s: %s', request.url, e)
+            log.debug('Widget crawl renderer blocked or failed %s at %s: %s: %s', urlsplit(request.url)._replace(query='', fragment='').geturl(), stage, type(e).__name__, e)
             try:
                 await route.abort()
             except Exception:

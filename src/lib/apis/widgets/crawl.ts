@@ -15,7 +15,10 @@ export const SUPPORTED_CRAWL_FILE_TYPES: CrawlFileType[] = [
 export type CrawlRenderMode = 'auto' | 'always' | 'never';
 
 export type CrawlSettings = {
+	crawl_provider: 'standard' | 'vip';
+	vip_wait_selector: string;
 	start_url: string;
+	extra_urls: string[];
 	max_depth: number;
 	max_pages: number;
 	same_domain_only: boolean;
@@ -27,6 +30,7 @@ export type CrawlSettings = {
 	allowed_file_types: CrawlFileType[];
 	max_file_size_mb: number;
 	max_total_size_mb: number;
+	max_retries: number;
 	request_timeout: number;
 	request_delay_ms: number;
 	max_concurrency: number;
@@ -35,7 +39,10 @@ export type CrawlSettings = {
 
 // Must match backend ChatWidgetCrawlSettings defaults exactly.
 export const DEFAULT_CRAWL_SETTINGS: CrawlSettings = {
+	crawl_provider: 'standard',
+	vip_wait_selector: '',
 	start_url: '',
+	extra_urls: [],
 	max_depth: 2,
 	max_pages: 100,
 	same_domain_only: true,
@@ -47,6 +54,7 @@ export const DEFAULT_CRAWL_SETTINGS: CrawlSettings = {
 	allowed_file_types: [...SUPPORTED_CRAWL_FILE_TYPES],
 	max_file_size_mb: 20,
 	max_total_size_mb: 500,
+	max_retries: 2,
 	request_timeout: 20,
 	request_delay_ms: 500,
 	max_concurrency: 2,
@@ -136,7 +144,10 @@ export type CrawlSelectionForm = {
 export const canonicalCrawlSettings = (settings: Partial<CrawlSettings>): CrawlSettings => {
 	const fileTypes = settings.allowed_file_types ?? DEFAULT_CRAWL_SETTINGS.allowed_file_types;
 	return {
+		crawl_provider: settings.crawl_provider ?? 'standard',
+		vip_wait_selector: settings.vip_wait_selector ?? '',
 		start_url: (settings.start_url ?? '').trim(),
+		extra_urls: [...(settings.extra_urls ?? [])],
 		max_depth: Number(settings.max_depth ?? DEFAULT_CRAWL_SETTINGS.max_depth),
 		max_pages: Number(settings.max_pages ?? DEFAULT_CRAWL_SETTINGS.max_pages),
 		same_domain_only: settings.same_domain_only ?? DEFAULT_CRAWL_SETTINGS.same_domain_only,
@@ -150,6 +161,7 @@ export const canonicalCrawlSettings = (settings: Partial<CrawlSettings>): CrawlS
 		max_total_size_mb: Number(
 			settings.max_total_size_mb ?? DEFAULT_CRAWL_SETTINGS.max_total_size_mb
 		),
+		max_retries: Number(settings.max_retries ?? DEFAULT_CRAWL_SETTINGS.max_retries),
 		request_timeout: Number(settings.request_timeout ?? DEFAULT_CRAWL_SETTINGS.request_timeout),
 		request_delay_ms: Number(settings.request_delay_ms ?? DEFAULT_CRAWL_SETTINGS.request_delay_ms),
 		max_concurrency: Number(settings.max_concurrency ?? DEFAULT_CRAWL_SETTINGS.max_concurrency),
@@ -230,3 +242,31 @@ export const extendWidgetKnowledge = (token: string, widgetId: string, runId: st
 		`${encodeURIComponent(widgetId)}/crawl/runs/${encodeURIComponent(runId)}/extend`,
 		'POST'
 	);
+
+export type WidgetUpload = { id: string; name: string; created_at?: number };
+export const listWidgetUploads = (token: string, widgetId: string) =>
+	request<WidgetUpload[]>(token, `${encodeURIComponent(widgetId)}/knowledge/uploads`);
+export const deleteWidgetUpload = (token: string, widgetId: string, fileId: string) =>
+	request<{ success: boolean }>(
+		token,
+		`${encodeURIComponent(widgetId)}/knowledge/uploads/${encodeURIComponent(fileId)}`,
+		'DELETE'
+	);
+export const uploadWidgetFile = async (
+	token: string,
+	widgetId: string,
+	file: File
+): Promise<WidgetUpload> => {
+	const body = new FormData();
+	body.append('file', file);
+	const response = await fetch(
+		`${WEBUI_API_BASE_URL}/widgets/${encodeURIComponent(widgetId)}/knowledge/uploads`,
+		{
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` },
+			body
+		}
+	);
+	if (!response.ok) throw await parseError(response);
+	return response.json();
+};

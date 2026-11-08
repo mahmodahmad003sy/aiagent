@@ -46,6 +46,27 @@ const pypiDepends = {
 import { loadPyodide } from 'pyodide';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import { writeFile, readFile, copyFile, readdir, rmdir, access, mkdir, rm } from 'fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
+
+// Windows can briefly lock generated assets while scanners or file watchers read them.
+async function writeGeneratedFile(path, data) {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			await writeFile(path, data);
+			return;
+		} catch (error) {
+			if (
+				process.platform !== 'win32' ||
+				!['UNKNOWN', 'EBUSY', 'EPERM', 'EACCES'].includes(error.code) ||
+				attempt >= 5
+			) {
+				throw error;
+			}
+			console.warn(`Temporarily unable to write ${path}; retrying (${attempt + 1}/5)`);
+			await delay(200 * 2 ** attempt);
+		}
+	}
+}
 
 /**
  * Loading network proxy configurations from the environment variables.
@@ -126,7 +147,7 @@ async function downloadPackages() {
 
 		try {
 			const lockFile = await micropip.freeze();
-			await writeFile('static/pyodide/pyodide-lock.json', lockFile);
+			await writeGeneratedFile('static/pyodide/pyodide-lock.json', lockFile);
 		} catch (err) {
 			console.error('Failed to write lock file:', err);
 		}
@@ -189,7 +210,7 @@ async function downloadPyPIWheels() {
 				continue;
 			}
 			const buffer = Buffer.from(await wheelRes.arrayBuffer());
-			await writeFile(dest, buffer);
+			await writeGeneratedFile(dest, buffer);
 			console.log(`  Saved: ${dest} (${buffer.length} bytes)`);
 		}
 
@@ -209,7 +230,7 @@ async function downloadPyPIWheels() {
 		}
 	}
 
-	await writeFile(lockPath, JSON.stringify(lockData, null, 2));
+	await writeGeneratedFile(lockPath, JSON.stringify(lockData, null, 2));
 	console.log('Updated pyodide-lock.json with PyPI packages');
 }
 
@@ -254,7 +275,7 @@ if (process.env.USE_SLIM === 'true') {
 			`https://cdn.jsdelivr.net/pyodide/v${version}/full/`
 		).href;
 	}
-	await writeFile(lockPath, JSON.stringify(lockData, null, 2));
+	await writeGeneratedFile(lockPath, JSON.stringify(lockData, null, 2));
 } else {
 	await downloadPackages();
 	await copyPyodide();
