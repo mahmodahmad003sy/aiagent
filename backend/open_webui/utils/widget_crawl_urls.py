@@ -229,6 +229,7 @@ def render_resource_text(
     link_text: str | None,
     context: str | None,
     size: int | None,
+    content_note: str | None = None,
 ) -> str:
     lines = [
         'Downloadable resource (link only)',
@@ -244,7 +245,7 @@ def render_resource_text(
         lines.append(f'Context: {context}')
     lines.append(f'Size: {human_size(size)}')
     lines.append(
-        'Note: The contents of this file were NOT read or indexed. Do not describe what is inside it. '
+        content_note or 'Note: The contents of this file were NOT read or indexed. Do not describe what is inside it. '
         'Tell the user the resource exists and give them the URL and the page where it was found.'
     )
     return '\n'.join(lines)

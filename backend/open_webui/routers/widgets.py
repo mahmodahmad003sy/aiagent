@@ -92,6 +92,14 @@ PUBLIC_WIDGET_STREAM_KEEPALIVE = 15
 PUBLIC_WIDGET_RESUME_MESSAGE_LIMIT = 100
 WIDGET_OWNER_TOKEN_TTL = timedelta(minutes=15)
 WIDGET_FOLDER_PREFIX = 'Widget: '
+WIDGET_RESPONSE_INSTRUCTION = (
+    'Format answers using Markdown: use real tables, numbered lists, and emphasis when useful. '
+    'When answering from website knowledge or tool results, finish with clickable Markdown links '
+    'to the relevant product, page, or file using URLs actually provided in those sources. '
+    'Never invent a URL. If no source URL is available, say so briefly rather than making one up. '
+    'For a metadata-only file whose content was excluded or unavailable, clearly say its contents '
+    'were not indexed, and provide its download link and source-page link. Do not infer its contents.'
+)
 WIDGET_KNOWLEDGE_INSTRUCTION = (
     'Use the provided website knowledge to answer. Some knowledge entries describe downloadable resources '
     '(link only): you may tell the user the resource exists and share its URL and the page where it was found, '
@@ -688,7 +696,7 @@ async def create_public_widget_chat_message(
 
     messages = []
     if system_prompt:
-        messages.append({'role': 'system', 'content': system_prompt})
+        messages.append({'role': 'system', 'content': system_prompt + '\n\n' + WIDGET_RESPONSE_INSTRUCTION})
     messages.append({'role': 'user', 'content': form_data.message})
 
     form_payload = {

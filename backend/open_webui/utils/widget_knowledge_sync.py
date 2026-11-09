@@ -140,6 +140,16 @@ async def add_document_to_knowledge(
                 'source_url': item.url,
                 'widget_id': widget_id,
                 'widget_crawl_kind': item.kind,
+                'source_page': item.found_on,
+                'source_page_title': item.found_on_title,
+                'source_name': item.name or item.title,
+                'link_text': item.link_text,
+                'file_type': item.file_type,
+                'file_size': item.size,
+                'source_context': item.context,
+                'crawl_depth': item.depth,
+                'crawl_status': item.status,
+                'http_status': item.http_status,
             },
             process=True,
             process_in_background=False,
@@ -207,13 +217,18 @@ class KnowledgeSync:
         await ChatWidgetCrawlItems.clear_extract_status(self.run.id)
 
         desired: dict[tuple[str, str], ChatWidgetCrawlItemModel] = {}
+        metadata_keys = set()
         for item in await ChatWidgetCrawlItems.get_items_by_run_id(self.run.id):
             if (
                 (item.kind == 'page' and item.status == 'ok' and item.selected)
                 or (item.kind == 'file' and item.status == 'supported' and item.selected)
-                or (item.kind == 'resource' and item.status == 'ok')
+                or item.kind == 'resource'
             ):
                 desired[(item.kind, item.url)] = item
+            if item.kind == 'file' or (item.kind == 'error' and item.file_type):
+                key = ('resource', item.url)
+                desired[key] = item.model_copy(update={'kind': 'resource'})
+                metadata_keys.add(key)
 
         existing: dict[tuple[str, str], ChatWidgetKnowledgeItemModel] = {
             (knowledge_item.kind, knowledge_item.url): knowledge_item
@@ -224,7 +239,7 @@ class KnowledgeSync:
         await self.save_progress()
 
         for key, knowledge_item in existing.items():
-            if key in desired:
+            if key in desired or knowledge_item.kind == 'upload':
                 continue
             self.check_cancel()
             await remove_knowledge_file(knowledge_id, knowledge_item.file_id)
@@ -232,11 +247,23 @@ class KnowledgeSync:
             self.progress['removed'] += 1
         await self.save_progress()
 
+        file_outcomes = {}
         async with CrawlFetcher(self.run.settings.request_timeout) as fetcher:
             for key, item in desired.items():
                 self.check_cancel()
+                if key in metadata_keys:
+                    indexed = file_outcomes.get(item.url) in {'embedded', 'unchanged'}
+                    state = 'indexed separately' if indexed else ('excluded by owner' if not item.selected else 'not indexed in this update')
+                    item = item.model_copy(update={'content_text':
+                        f'Content indexing: {state}. Crawl status: {item.status}. '
+                        'This entry contains metadata only. Do not infer file contents from its name. '
+                        'If full content is unavailable, say it was not indexed and provide the download and source-page links.'})
                 outcome, error = await self.sync_item(fetcher, knowledge_id, item, existing.get(key))
-                await ChatWidgetCrawlItems.set_extract_status(item.id, outcome, error)
+                if key[0] == 'file':
+                    file_outcomes[item.url] = outcome
+                if key not in metadata_keys or not item.selected:
+                    display_outcome = 'metadata_only' if key in metadata_keys and outcome in {'embedded', 'unchanged'} else outcome
+                    await ChatWidgetCrawlItems.set_extract_status(item.id, display_outcome, error)
                 self.progress[outcome] += 1
                 self.progress['done'] += 1
                 await self.save_progress()
@@ -303,7 +330,9 @@ class KnowledgeSync:
                 link_text=item.link_text,
                 context=item.context,
                 size=item.size,
+                content_note=item.content_text,
             )
+            document += f'\nCrawl status: {item.status}\nHTTP status: {item.http_status}\nDiscovery depth: {item.depth}'
             return f'resource-{slugify(name)}.txt', 'text/plain', document.encode('utf-8')
 
         if self.bytes_downloaded >= self.max_total_bytes:

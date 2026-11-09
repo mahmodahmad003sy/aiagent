@@ -69,6 +69,7 @@
 
 	const EXTRACT_LABELS: Record<string, string> = {
 		embedded: 'Embedded',
+		metadata_only: 'Metadata indexed (content excluded)',
 		unchanged: 'Embedded (unchanged)',
 		no_text: 'No extractable text found',
 		failed: 'Extraction failed',
@@ -166,6 +167,9 @@
 		return counts;
 	}, new Map<string, number>());
 	$: tabItems = items.filter((item) => item.kind === activeTab);
+	$: selectableInTab = tabItems.filter((item) => isSelectable(item));
+	$: selectedInTab = selectableInTab.filter((item) => item.selected).length;
+	$: allInTabSelected = selectableInTab.length > 0 && selectedInTab === selectableInTab.length;
 	$: searchTerm = search.trim().toLowerCase();
 	$: filteredItems = searchTerm
 		? tabItems.filter((item) =>
@@ -426,6 +430,16 @@
 </script>
 
 <section class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850">
+	<p class="px-4 pt-3 text-xs text-gray-500">
+		{$i18n.t(
+			'Crawling and knowledge updates continue if you refresh or close this page. A server restart interrupts the job; start it again after the server is available.'
+		)}
+	</p>
+	<p class="px-4 pt-2 text-xs text-gray-500">
+		{$i18n.t(
+			'File checkboxes control content indexing. Names, source pages and download links remain searchable after Extend Knowledge, including for unchecked files.'
+		)}
+	</p>
 	<div
 		class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-850"
 	>
@@ -1012,7 +1026,24 @@
 							<table class="w-full text-left text-xs">
 								<thead class="text-gray-500">
 									<tr class="border-b border-gray-100 dark:border-gray-850">
-										<th class="w-12 px-3 py-2">{$i18n.t('Embed')}</th>
+										<th class="w-12 px-3 py-2">
+											<label
+												class="flex items-center gap-2"
+												title={$i18n.t(
+													'Select or deselect all eligible items in this tab, including hidden results'
+												)}
+											>
+												<input
+													type="checkbox"
+													checked={allInTabSelected}
+													indeterminate={selectedInTab > 0 && !allInTabSelected}
+													disabled={extendActive || selectableInTab.length === 0}
+													aria-label={$i18n.t('Select or deselect all')}
+													on:change={(event) => selectAllInTab(event.currentTarget.checked)}
+												/>
+												{$i18n.t('Embed')}
+											</label>
+										</th>
 										<th class="px-3 py-2">{$i18n.t('Page Title')}</th>
 										<th class="px-3 py-2">{$i18n.t('URL')}</th>
 										<th class="w-16 px-3 py-2">{$i18n.t('Depth')}</th>
@@ -1079,7 +1110,24 @@
 							<table class="w-full text-left text-xs">
 								<thead class="text-gray-500">
 									<tr class="border-b border-gray-100 dark:border-gray-850">
-										<th class="w-12 px-3 py-2">{$i18n.t('Embed')}</th>
+										<th class="w-12 px-3 py-2">
+											<label
+												class="flex items-center gap-2"
+												title={$i18n.t(
+													'Select or deselect all eligible items in this tab, including hidden results'
+												)}
+											>
+												<input
+													type="checkbox"
+													checked={allInTabSelected}
+													indeterminate={selectedInTab > 0 && !allInTabSelected}
+													disabled={extendActive || selectableInTab.length === 0}
+													aria-label={$i18n.t('Select or deselect all')}
+													on:change={(event) => selectAllInTab(event.currentTarget.checked)}
+												/>
+												{$i18n.t('Embed')}
+											</label>
+										</th>
 										<th class="px-3 py-2">{$i18n.t('Name')}</th>
 										<th class="w-16 px-3 py-2">{$i18n.t('Type')}</th>
 										<th class="w-20 px-3 py-2">{$i18n.t('Size')}</th>
