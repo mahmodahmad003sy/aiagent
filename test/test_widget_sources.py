@@ -60,6 +60,21 @@ class SourcesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(crawler.items['https://other.example/page']['status'], 'ok')
         self.assertIsNone(crawler.handle_link('https://unlisted.example/page', 1, '', '', '', ''))
 
+    async def test_extensionless_download_at_depth_limit_is_probed(self):
+        load('backend/open_webui/utils/widget_crawler.py', {'new_item', 'WidgetCrawler'}, self.ns)
+        settings = self.ns['ChatWidgetCrawlSettings'](start_url='https://new.example', max_depth=0, respect_robots=False)
+        crawler = self.ns['WidgetCrawler']('run', settings, asyncio.Event())
+        url = 'https://new.example/download.php?id=123'
+        self.assertIsNone(crawler.handle_link(url, 1, settings.start_url, 'Home', 'Manual', '', True))
+        self.assertEqual(crawler.files_to_probe, [url])
+        crawler.fetcher = SimpleNamespace(fetch=AsyncMock(return_value=SimpleNamespace(
+            url=url, status='ok', content_type='application/octet-stream', content_length=8000000,
+            content_disposition='attachment; filename="manual.pdf"')))
+        await crawler.probe_file(url)
+        self.assertEqual(crawler.items[url]['kind'], 'file')
+        self.assertEqual(crawler.items[url]['status'], 'supported')
+        self.assertEqual(crawler.items[url]['found_on'], settings.start_url)
+
     def test_hosted_preview_and_external_domain_rules(self):
         load('backend/open_webui/routers/widgets.py', {'_domain_from_value', '_request_domain', '_domain_matches', '_ensure_domain_allowed'}, self.ns)
         widget = SimpleNamespace(allowed_domains=['customer.example'])

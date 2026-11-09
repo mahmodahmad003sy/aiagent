@@ -63,5 +63,56 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(classify('text/html', 'https://example.com/guide.pdf', ['pdf']), ('page', ''))
         self.assertEqual(classify('application/octet-stream', 'https://example.com/guide.pdf', []), ('resource', 'PDF'))
 
+
+class GenericDiscoveryTests(unittest.TestCase):
+    def test_arbitrary_hosts_and_framework_json(self):
+        for host in ('next.example', 'react.example', 'php.example'):
+            for kind in ('application/json', 'application/ld+json'):
+                data = {'items': [{'url': '/services/detail?id=91'}, {'download_url': '/get.php?doc=7'},
+                                  {'href': 'manual.pdf'}, {'pathname': '/products', 'query': {'id': [12, 13]}}]}
+                html = '<main>Visible text</main><script type="' + kind + '">' + json.dumps(data) + '</script>'
+                page = production_parser()(html, 'https://' + host + '/catalog/')
+                links = {link.url for link in page.links}
+                self.assertIn('https://' + host + '/services/detail?id=91', links)
+                self.assertIn('https://' + host + '/get.php?doc=7', links)
+                self.assertIn('https://' + host + '/catalog/manual.pdf', links)
+                self.assertIn('https://' + host + '/products?id=12&id=13', links)
+                self.assertNotIn('items', page.text)
+
+    def test_literal_navigation_and_no_expression_guessing(self):
+        html = """<button onclick="location.href='/services?id=27'">Details</button>
+          <button onclick="window.open('/download.php?file=9', '_blank')">Manual</button>
+          <button onclick="router.push('/product/' + product.id)">Unknown</button>
+          <button onclick="deleteRecord(9)">Delete</button>"""
+        page = production_parser()(html, 'https://unrelated.example/')
+        self.assertEqual({link.url for link in page.links}, {
+            'https://unrelated.example/services?id=27', 'https://unrelated.example/download.php?file=9'})
+
+    def test_declared_download_is_not_an_ordinary_page(self):
+        page = production_parser()('<a download="guide.pdf" href="/get?id=9">Manual</a><a href="/page">Page</a>', 'https://new.example/')
+        self.assertTrue(page.links[0].download)
+        self.assertFalse(page.links[1].download)
+
+    def test_partial_ssr_still_renders(self):
+        html = '<a href="/">Home</a><script id="__NEXT_DATA__">{}</script><main>Content</main>'
+        self.assertTrue(render_ns['needs_rendering']('auto', html, 'Visible content ' * 100))
+        self.assertFalse(render_ns['needs_rendering']('never', html, 'Visible content ' * 100))
+
+    def test_api_documents_on_unrelated_host(self):
+        data = {'documents': [{'contentUrl': 'https://cdn.example/guide.pdf', 'title': 'Manual'},
+                              {'file_url': '/download?token=xyz'}, {'uuid': 'unknown', 'extension': 'pdf'}]}
+        links = ns['json_links'](json.dumps(data).encode(), 'https://random.example/api/items')
+        self.assertEqual(set(links), {'https://cdn.example/guide.pdf', 'https://random.example/download?token=xyz'})
+
+    def test_encoded_download_filename(self):
+        result = urls.classify_content_type('application/octet-stream', 'https://random.example/dl?id=9', ['pdf'],
+            content_disposition="attachment; filename*=UTF-8''installation%20guide.pdf")
+        self.assertEqual(result, ('file', 'pdf'))
+
+    def test_discovery_remains_bounded(self):
+        data = {'items': [{'href': '/page/' + str(i)} for i in range(10000)]}
+        self.assertLessEqual(len(ns['json_links'](json.dumps(data).encode(), 'https://random.example/')), urls.MAX_LINKED_ITEMS)
+        self.assertEqual(ns['json_links'](b'x' * (5 * 1024 * 1024 + 1), 'https://random.example/'), {})
+
 if __name__ == '__main__':
     unittest.main()

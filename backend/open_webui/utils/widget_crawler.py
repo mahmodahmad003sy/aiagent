@@ -94,8 +94,8 @@ def parse_html_page(html: str, page_url: str) -> ParsedPage:
 
     links: list[ParsedLink] = []
     seen_on_page: set[str] = set()
-    for anchor in soup.select('a[href], area[href], [data-href], [data-url], iframe[src], embed[src], object[data]'):
-        href = anchor.get('href') or anchor.get('data-href') or anchor.get('data-url') or anchor.get('src') or anchor.get('data')
+    for anchor in soup.select('a[href], area[href], [data-href], [data-url], [data-download-url], [data-file-url], link[rel=alternate][href], link[rel=attachment][href], iframe[src], embed[src], object[data]'):
+        href = anchor.get('href') or anchor.get('data-href') or anchor.get('data-url') or anchor.get('data-download-url') or anchor.get('data-file-url') or anchor.get('src') or anchor.get('data')
         url = resolve_href(base_url, href)
         if not url or url in seen_on_page:
             continue
@@ -104,7 +104,7 @@ def parse_html_page(html: str, page_url: str) -> ParsedPage:
         parent = anchor.find_parent(['p', 'li', 'td', 'dd', 'figcaption', 'div'])
         context = _clean(parent.get_text(' ', strip=True))[:MAX_CONTEXT_CHARS] if parent else ''
         links.append(ParsedLink(url=url, text=text, context=context,
-                                download=anchor.has_attr('download') or anchor.get('type', '').lower() in CONTENT_TYPE_TO_FILE_TYPE))
+                                download=anchor.has_attr('download') or anchor.has_attr('data-download-url') or anchor.has_attr('data-file-url') or anchor.get('type', '').lower() in CONTENT_TYPE_TO_FILE_TYPE))
 
     for url, label in html_data_links(soup, base_url).items():
         if url not in seen_on_page:

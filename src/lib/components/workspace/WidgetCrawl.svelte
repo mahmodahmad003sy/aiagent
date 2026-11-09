@@ -709,9 +709,7 @@
 						<label class="col-span-2 block">
 							<div class={labelClass}>{$i18n.t('JavaScript rendering')}</div>
 							<select class={inputClass} bind:value={settings.render_js} disabled={jobActive}>
-								<option value="auto"
-									>{$i18n.t('Auto (detect JavaScript apps)')}</option
-								>
+								<option value="auto">{$i18n.t('Auto (detect JavaScript apps)')}</option>
 								<option value="always">{$i18n.t('Always (slower)')}</option>
 								<option value="never">{$i18n.t('Never (plain HTML only)')}</option>
 							</select>
@@ -864,12 +862,16 @@
 							</div>
 						{/if}
 						{#if resultsRun.progress?.discovery_warnings?.length}
-                            <div class="mt-2 rounded-lg border border-amber-200 p-3 text-xs text-amber-800 dark:border-amber-800 dark:text-amber-200">
-                                <p class="font-medium">{$i18n.t('Discovery may be incomplete')}</p>
-                                {#each resultsRun.progress.discovery_warnings as warning}<p class="mt-1">{$i18n.t(warning)}</p>{/each}
-                            </div>
-                        {/if}
-                        {#if resultsRun.progress?.render_error}
+							<div
+								class="mt-2 rounded-lg border border-amber-200 p-3 text-xs text-amber-800 dark:border-amber-800 dark:text-amber-200"
+							>
+								<p class="font-medium">{$i18n.t('Discovery may be incomplete')}</p>
+								{#each resultsRun.progress.discovery_warnings as warning}<p class="mt-1">
+										{$i18n.t(warning)}
+									</p>{/each}
+							</div>
+						{/if}
+						{#if resultsRun.progress?.render_error}
 							<div class="text-amber-600">
 								{$i18n.t(
 									'Some pages need JavaScript to show their text, but rendering is not available:'

@@ -1,6 +1,6 @@
 """JavaScript rendering for the widget crawler (React, Vite, Vue and other client-rendered sites).
 
-Pages are fetched with plain HTTP first. App shells with missing readable text or navigation
+Pages are fetched with plain HTTP first. App shells and hydration-based pages, including partial server rendering,
 are loaded again in headless Chromium. The browser starts on the first page that needs it.
 Public JSON download links are collected alongside the rendered DOM.
 
@@ -220,7 +220,7 @@ class CrawlRenderer:
 
             await self._settle(page)
             # Unknown click-only controls cannot be inferred safely from HTML.
-            unresolved = await page.locator('button:not([disabled]), [role="link"]:not(a), [onclick]').evaluate_all(
+            unresolved = await page.locator('button:not([disabled]), [role="button"], [role="link"]:not(a), [onclick]').evaluate_all(
                 "els => els.filter(e => !e.closest('form') && !e.querySelector('a[href]') && !e.hasAttribute('data-href') && !e.hasAttribute('data-url')).length"
             )
             if unresolved:
