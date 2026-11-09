@@ -11,7 +11,7 @@ export const SUPPORTED_CRAWL_FILE_TYPES: CrawlFileType[] = [
 	'pptx'
 ];
 
-// auto: load pages in a headless browser only when their HTML has no text (React, Vite, Vue apps).
+// auto: render app shells and hydration pages, including partially server-rendered apps.
 export type CrawlRenderMode = 'auto' | 'always' | 'never';
 
 export type CrawlSettings = {

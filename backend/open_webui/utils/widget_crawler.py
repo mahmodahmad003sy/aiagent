@@ -10,12 +10,14 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from open_webui.utils.widget_crawl_next_data import extract_metasolutions_page
+from open_webui.utils.widget_crawl_discovery import html_data_links
 from open_webui.models.chat_widget_crawl import ChatWidgetCrawlItems, ChatWidgetCrawlRuns, ChatWidgetCrawlSettings
 from open_webui.utils.widget_crawl_fetch import CrawlFetcher, FetchResult
 from open_webui.utils.widget_crawl_vip import fetch_vip
 from open_webui.utils.widget_crawl_render import CrawlRenderer, needs_rendering
 from open_webui.utils.widget_crawl_urls import (
     HTML_CONTENT_TYPES,
+    CONTENT_TYPE_TO_FILE_TYPE,
     KEEP_RUNS_PER_WIDGET,
     MAX_CONTEXT_CHARS,
     MAX_ERROR_ITEMS,
@@ -48,6 +50,7 @@ class ParsedLink:
     url: str
     text: str
     context: str
+    download: bool = False
 
 
 @dataclass
@@ -91,15 +94,22 @@ def parse_html_page(html: str, page_url: str) -> ParsedPage:
 
     links: list[ParsedLink] = []
     seen_on_page: set[str] = set()
-    for anchor in soup.find_all('a', href=True):
-        url = resolve_href(base_url, anchor['href'])
+    for anchor in soup.select('a[href], area[href], [data-href], [data-url], iframe[src], embed[src], object[data]'):
+        href = anchor.get('href') or anchor.get('data-href') or anchor.get('data-url') or anchor.get('src') or anchor.get('data')
+        url = resolve_href(base_url, href)
         if not url or url in seen_on_page:
             continue
         seen_on_page.add(url)
         text = _clean(anchor.get_text(' ', strip=True))[:MAX_LINK_TEXT_CHARS]
         parent = anchor.find_parent(['p', 'li', 'td', 'dd', 'figcaption', 'div'])
         context = _clean(parent.get_text(' ', strip=True))[:MAX_CONTEXT_CHARS] if parent else ''
-        links.append(ParsedLink(url=url, text=text, context=context))
+        links.append(ParsedLink(url=url, text=text, context=context,
+                                download=anchor.has_attr('download') or anchor.get('type', '').lower() in CONTENT_TYPE_TO_FILE_TYPE))
+
+    for url, label in html_data_links(soup, base_url).items():
+        if url not in seen_on_page:
+            seen_on_page.add(url)
+            links.append(ParsedLink(url=url, text=label, context=''))
 
     for tag in soup(REMOVED_TAGS):
         tag.decompose()
@@ -110,7 +120,8 @@ def parse_html_page(html: str, page_url: str) -> ParsedPage:
     if embedded and len(text.strip()) < MIN_PAGE_TEXT_CHARS:
         text = embedded['content_text'][:MAX_PAGE_TEXT_CHARS]
         title = (embedded['title'] or title)[:MAX_TITLE_CHARS]
-        # Preserve real links in embedded descriptions through the usual URL filters.
+    if embedded:
+        # Preserve embedded links even when the page already has readable text.
         content = BeautifulSoup(embedded['content_html'], 'lxml')
         for anchor in content.find_all('a', href=True):
             url = resolve_href(base_url, anchor['href'])
@@ -218,6 +229,7 @@ class WidgetCrawler:
             'limit_reached': self.limit_reached,
             'rendered': self.renderer.pages_rendered if self.renderer else 0,
             'render_error': self.renderer.error if self.renderer else None,
+            'discovery_warnings': sorted(getattr(self.renderer, 'discovery_warnings', set())),
         }
 
     def check_cancel(self) -> None:
@@ -338,12 +350,20 @@ class WidgetCrawler:
         found_on_title: str,
         link_text: str,
         context: str,
+        download: bool = False,
     ) -> Optional[tuple[str, str, str]]:
         """Record a discovered link. Returns a page entry to crawl next, or None."""
         if url in self.seen:
             return None
 
         kind, type_value = classify_url(url, self.settings.allowed_file_types)
+        if kind == 'page' and download:
+            if self.settings.discover_files:
+                self.seen.add(url)
+                self.add_linked_item('resource', 'Other', url, depth, found_on, found_on_title, link_text, context)
+                if url in self.items:
+                    self.files_to_probe.append(url)
+            return None
         if kind == 'page':
             if depth > self.settings.max_depth:
                 return None
@@ -448,6 +468,12 @@ class WidgetCrawler:
 
         result, already_rendered = await self.fetch_page(url)
         self.bytes_downloaded += len(result.body)
+        if result.status == 'too_large':
+            kind, type_value = classify_content_type(result.content_type, result.url,
+                self.settings.allowed_file_types, content_disposition=getattr(result, 'content_disposition', ''))
+            if kind != 'page':
+                self.add_linked_item(kind, type_value, result.url, depth, found_on, found_on_title, '', '', size=result.content_length)
+                return [], True
         if result.status != 'ok':
             self.add_error(url, result.status, result.http_status, depth, found_on, found_on_title, result.error)
             return [], True
@@ -472,7 +498,8 @@ class WidgetCrawler:
             self.seen.add(final_url)
 
         kind, type_value = classify_content_type(
-            result.content_type, final_url, self.settings.allowed_file_types, result.body[:1024]
+            result.content_type, final_url, self.settings.allowed_file_types, result.body[:1024],
+            getattr(result, 'content_disposition', '')
         )
         if kind != 'page':
             self.add_linked_item(
@@ -502,7 +529,7 @@ class WidgetCrawler:
             if url in self.extra_urls:
                 return [], True
             return [candidate for link in page.links if (candidate := self.handle_link(
-                link.url, depth + 1, final_url, title, link.text, link.context
+                link.url, depth + 1, final_url, title, link.text, link.context, getattr(link, 'download', False)
             ))], True
         self.items[final_url] = new_item(
             'page',
@@ -521,7 +548,7 @@ class WidgetCrawler:
             return [], True
         candidates = []
         for link in page.links:
-            candidate = self.handle_link(link.url, depth + 1, final_url, title, link.text, link.context)
+            candidate = self.handle_link(link.url, depth + 1, final_url, title, link.text, link.context, getattr(link, 'download', False))
             if candidate:
                 candidates.append(candidate)
         return candidates, True
@@ -623,6 +650,12 @@ class WidgetCrawler:
             item['status'] = 'not_a_file'
             return
 
+        kind, file_type = classify_content_type(result.content_type, result.url,
+            self.settings.allowed_file_types, content_disposition=getattr(result, 'content_disposition', ''))
+        if kind != 'page':
+            item['kind'] = kind
+            item['file_type'] = file_type
+            item['status'] = 'supported' if kind == 'file' else 'ok'
         item['size'] = result.content_length
         if result.content_length is not None and result.content_length > self.max_file_bytes:
             item['status'] = 'too_large'

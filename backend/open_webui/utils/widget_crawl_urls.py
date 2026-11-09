@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from email.message import Message
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 CRAWLER_USER_AGENT = 'OpenWebUI-WidgetCrawler/1.0'
@@ -154,13 +155,23 @@ def classify_url(url: str, allowed_file_types: list[str]) -> tuple[str, str]:
 
 
 def classify_content_type(
-    content_type: str, url: str, allowed_file_types: list[str], body_start: bytes = b''
+    content_type: str, url: str, allowed_file_types: list[str], body_start: bytes = b'',
+    content_disposition: str = '',
 ) -> tuple[str, str]:
     """Classify a fetched response by its Content-Type header. Returns (kind, type)."""
     base = (content_type or '').split(';')[0].strip().lower()
     if base in HTML_CONTENT_TYPES:
         return 'page', ''
-    if not base:
+    if base in ('', 'application/octet-stream', 'binary/octet-stream'):
+        if body_start.lstrip().startswith(b'%PDF-'):
+            return ('file', 'pdf') if 'pdf' in allowed_file_types else ('resource', 'Document')
+        header = Message()
+        header['Content-Disposition'] = content_disposition
+        filename = header.get_filename()
+        if filename:
+            kind, type_value = classify_url('https://download.invalid/' + filename, allowed_file_types)
+            if kind != 'page':
+                return kind, type_value
         sample = body_start[:1024].lstrip().lower()
         if sample.startswith((b'<!doctype html', b'<html')) or b'<html' in sample:
             return 'page', ''

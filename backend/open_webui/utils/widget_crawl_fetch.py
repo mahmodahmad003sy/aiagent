@@ -67,6 +67,7 @@ class FetchResult:
     body: bytes = b''
     error: Optional[str] = None
     retry_after: Optional[float] = None
+    content_disposition: str = ''
 
 
 def _parse_int(value: Optional[str]) -> Optional[int]:
@@ -170,6 +171,7 @@ class CrawlFetcher:
                         log.warning('Widget crawl fetch %s %s: %s', method, current, detail)
                         return FetchResult(
                             url=current, status='http_error', http_status=response.status, content_type=content_type,
+                            content_disposition=response.headers.get('Content-Disposition', ''),
                             error=detail, retry_after=retry_seconds,
                         )
 
@@ -179,6 +181,7 @@ class CrawlFetcher:
                             status='ok',
                             http_status=response.status,
                             content_type=content_type,
+                            content_disposition=response.headers.get('Content-Disposition', ''),
                             content_length=content_length,
                         )
 
@@ -188,6 +191,7 @@ class CrawlFetcher:
                             status='too_large',
                             http_status=response.status,
                             content_type=content_type,
+                            content_disposition=response.headers.get('Content-Disposition', ''),
                             content_length=content_length,
                         )
 
@@ -201,6 +205,7 @@ class CrawlFetcher:
                                 status='too_large',
                                 http_status=response.status,
                                 content_type=content_type,
+                                content_disposition=response.headers.get('Content-Disposition', ''),
                                 content_length=content_length,
                             )
                         chunks.append(chunk)
@@ -210,6 +215,7 @@ class CrawlFetcher:
                         status='ok',
                         http_status=response.status,
                         content_type=content_type,
+                        content_disposition=response.headers.get('Content-Disposition', ''),
                         content_length=content_length if content_length is not None else total,
                         body=b''.join(chunks),
                     )

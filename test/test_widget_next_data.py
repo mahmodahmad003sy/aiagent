@@ -27,6 +27,9 @@ def production_parser():
     nodes = [node for node in tree.body if getattr(node, 'name', '') in names
              or isinstance(node, ast.Assign) and any(getattr(t, 'id', '') == 'REMOVED_TAGS' for t in node.targets)]
     ns = dict(globals())
+    discovery = ast.parse((ROOT / 'backend/open_webui/utils/widget_crawl_discovery.py').read_text(encoding='utf-8'))
+    discovery.body = [node for node in discovery.body if not (isinstance(node, ast.ImportFrom) and (node.module or '').startswith('open_webui'))]
+    exec(compile(discovery, 'discovery', 'exec'), ns)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), ns)
     return ns['parse_html_page']
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlsplit
+from html import escape
 
 class PageData(HTMLParser):
     def __init__(self):
@@ -127,6 +128,18 @@ def extract_metasolutions_page(html: str, url: str) -> dict | None:
     if isinstance(sections, dict):
         for section in list(sections.values())[:100]:
             visit(section)
+    # This site's service cards use router.push rather than anchors. Only derive
+    # the known route from public service records, never arbitrary application IDs.
+    services = sections.get('services', {}) if isinstance(sections, dict) else {}
+    service_items = services.get('items', []) if isinstance(services, dict) else []
+    if urlsplit(url).path.rstrip('/') == '/services':
+        page_items = data.get('pageItems', [])
+        service_items = page_items.get('items', []) if isinstance(page_items, dict) else page_items
+    if isinstance(service_items, list):
+        for service in service_items[:1000]:
+            if isinstance(service, dict) and str(service.get('id', '')).isdigit():
+                fragments.append('<a href="/services/subservices?id=' + str(service['id']) + '">' +
+                                 escape(str(service.get('title') or 'Service')) + '</a>')
     description = detail.get('description')
     if isinstance(description, str) and (text := clean_html(description)):
         blocks.insert(0, text)

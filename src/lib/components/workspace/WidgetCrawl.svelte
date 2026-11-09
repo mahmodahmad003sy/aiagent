@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { crawlTree } from '$lib/utils/crawlTree';
 	import { getContext, onDestroy, onMount } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
@@ -113,6 +114,14 @@
 	let extending = false;
 	let cancelling = false;
 	let activeTab: CrawlItemKind = 'page';
+	let pageView: 'tree' | 'list' = 'tree';
+	let collapsedPages = new Set<string>();
+	const toggleBranch = (url: string) => {
+		const next = new Set(collapsedPages);
+		if (next.has(url)) next.delete(url);
+		else next.add(url);
+		collapsedPages = next;
+	};
 	let search = '';
 	let visibleCount = PAGE_SIZE;
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -164,13 +173,17 @@
 			)
 		: tabItems;
 	$: visibleItems = filteredItems.slice(0, visibleCount);
+	$: pageRows =
+		pageView === 'tree' && !searchTerm
+			? crawlTree(tabItems, collapsedPages)
+			: filteredItems.map((item) => ({ item, level: 0, hasChildren: false }));
 
 	const isSelectable = (item: CrawlItem) =>
 		(item.kind === 'page' && item.status === 'ok') ||
 		(item.kind === 'file' && item.status === 'supported');
 
 	const humanSize = (bytes: number | null | undefined) => {
-		if (bytes === null || bytes === undefined) return 'â€”';
+		if (bytes === null || bytes === undefined) return '—';
 		const units = ['B', 'KB', 'MB', 'GB'];
 		let value = bytes;
 		let unit = 0;
@@ -197,7 +210,7 @@
 		let text = $i18n.t(STATUS_LABELS[item.status] ?? item.status);
 		if (item.http_status) text = `${text} (${item.http_status})`;
 		if (item.extract_status) {
-			text = `${text} Â· ${$i18n.t(EXTRACT_LABELS[item.extract_status] ?? item.extract_status)}`;
+			text = `${text} · ${$i18n.t(EXTRACT_LABELS[item.extract_status] ?? item.extract_status)}`;
 		}
 		return text;
 	};
@@ -217,7 +230,7 @@
 	};
 
 	const formatTime = (seconds: number | null | undefined) =>
-		seconds ? new Date(seconds * 1000).toLocaleString() : 'â€”';
+		seconds ? new Date(seconds * 1000).toLocaleString() : '—';
 
 	const applySettings = (value: CrawlSettings | null) => {
 		const fallbackDomain = (widget.allowed_domains ?? []).find(
@@ -436,25 +449,44 @@
 		</div>
 	{:else}
 		<div class="space-y-4 p-4">
-            <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700 space-y-2">
-                <label class="block">
-                    <div class={labelClass}>{$i18n.t('Crawling service')}</div>
-                    <select class={inputClass} bind:value={settings.crawl_provider} disabled={jobActive}>
-                        <option value="standard">{$i18n.t('Standard — local crawler')}</option>
-                        <option value="vip">{$i18n.t('VIP — paid 2Captcha scraper')}</option>
-                    </select>
-                </label>
-                {#if settings.crawl_provider === 'vip'}
-                    <p class="text-xs text-amber-700 dark:text-amber-300">{$i18n.t('Paid service: each page can consume your provider balance, including failed tasks. Set a small maximum page count first. Pages are processed one at a time. Pending tasks are followed without duplicate submissions.')}</p>
-                    <p class="text-xs font-medium">{$i18n.t('Maximum paid page tasks this crawl')}: {settings.max_pages}</p>
-                    <p class="text-xs text-gray-500">{$i18n.t('An administrator must configure SCRAPER_API_KEY on the server. Sitemap, robots and file requests still use the local crawler.')}</p>
-                    <label class="block">
-                        <div class={labelClass}>{$i18n.t('Wait for content (optional CSS selector)')}</div>
-                        <input class={inputClass} bind:value={settings.vip_wait_selector} disabled={jobActive} placeholder={'a[href*="/en/details/"]'} />
-                        <p class="mt-1 text-xs text-gray-500">{$i18n.t('For EPC home, use a[href*="/en/details/"]. Choose a selector present on every page you crawl, or leave blank.')}</p>
-                    </label>
-                {/if}
-            </div>
+			<div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700 space-y-2">
+				<label class="block">
+					<div class={labelClass}>{$i18n.t('Crawling service')}</div>
+					<select class={inputClass} bind:value={settings.crawl_provider} disabled={jobActive}>
+						<option value="standard">{$i18n.t('Standard — local crawler')}</option>
+						<option value="vip">{$i18n.t('VIP — paid 2Captcha scraper')}</option>
+					</select>
+				</label>
+				{#if settings.crawl_provider === 'vip'}
+					<p class="text-xs text-amber-700 dark:text-amber-300">
+						{$i18n.t(
+							'Paid service: each page can consume your provider balance, including failed tasks. Set a small maximum page count first. Pages are processed one at a time. Pending tasks are followed without duplicate submissions.'
+						)}
+					</p>
+					<p class="text-xs font-medium">
+						{$i18n.t('Maximum paid page tasks this crawl')}: {settings.max_pages}
+					</p>
+					<p class="text-xs text-gray-500">
+						{$i18n.t(
+							'An administrator must configure SCRAPER_API_KEY on the server. Sitemap, robots and file requests still use the local crawler.'
+						)}
+					</p>
+					<label class="block">
+						<div class={labelClass}>{$i18n.t('Wait for content (optional CSS selector)')}</div>
+						<input
+							class={inputClass}
+							bind:value={settings.vip_wait_selector}
+							disabled={jobActive}
+							placeholder={'a[href*="/en/details/"]'}
+						/>
+						<p class="mt-1 text-xs text-gray-500">
+							{$i18n.t(
+								'For EPC home, use a[href*="/en/details/"]. Choose a selector present on every page you crawl, or leave blank.'
+							)}
+						</p>
+					</label>
+				{/if}
+			</div>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<div class="space-y-3">
 					<label class="block">
@@ -631,13 +663,22 @@
 								disabled={jobActive}
 							/>
 						</label>
-                        <div class="col-span-2 text-xs text-gray-500">
-                            {$i18n.t('For HTTP 429, try a 3000 ms delay and 1 parallel request. For slow sites, try a 60–120 second timeout. Retries respect Retry-After up to 5 minutes; longer waits require a later re-crawl. Website access restrictions may still prevent crawling.')}
-                        </div>
-                        <label class="block">
-                            <div class={labelClass}>{$i18n.t('Retries for rate limits and timeouts')}</div>
-                            <input type="number" min="0" max="5" class={inputClass} bind:value={settings.max_retries} disabled={jobActive} />
-                        </label>
+						<div class="col-span-2 text-xs text-gray-500">
+							{$i18n.t(
+								'For HTTP 429, try a 3000 ms delay and 1 parallel request. For slow sites, try a 60–120 second timeout. Retries respect Retry-After up to 5 minutes; longer waits require a later re-crawl. Website access restrictions may still prevent crawling.'
+							)}
+						</div>
+						<label class="block">
+							<div class={labelClass}>{$i18n.t('Retries for rate limits and timeouts')}</div>
+							<input
+								type="number"
+								min="0"
+								max="5"
+								class={inputClass}
+								bind:value={settings.max_retries}
+								disabled={jobActive}
+							/>
+						</label>
 						<label class="block">
 							<div class={labelClass}>{$i18n.t('Request timeout (seconds)')}</div>
 							<input
@@ -659,15 +700,17 @@
 								bind:value={settings.request_delay_ms}
 								disabled={jobActive}
 							/>
-                            <div class="mt-1 text-xs text-gray-500">
-                                {$i18n.t('Minimum time between crawler HTTP request starts, shared across parallel workers in this crawl. 3000 ms means at most one request every 3 seconds. JavaScript browser resources use separate requests.')}
-                            </div>
+							<div class="mt-1 text-xs text-gray-500">
+								{$i18n.t(
+									'Minimum time between crawler HTTP request starts, shared across parallel workers in this crawl. 3000 ms means at most one request every 3 seconds. JavaScript browser resources use separate requests.'
+								)}
+							</div>
 						</label>
 						<label class="col-span-2 block">
 							<div class={labelClass}>{$i18n.t('JavaScript rendering')}</div>
 							<select class={inputClass} bind:value={settings.render_js} disabled={jobActive}>
 								<option value="auto"
-									>{$i18n.t('Auto (only pages without text, e.g. React/Vite apps)')}</option
+									>{$i18n.t('Auto (detect JavaScript apps)')}</option
 								>
 								<option value="always">{$i18n.t('Always (slower)')}</option>
 								<option value="never">{$i18n.t('Never (plain HTML only)')}</option>
@@ -746,16 +789,16 @@
 						</span>
 						{#if crawlActive && currentRun.progress?.phase}
 							<span class="text-gray-500">
-								Â· {$i18n.t(PHASE_LABELS[currentRun.progress.phase] ?? currentRun.progress.phase)}
+								· {$i18n.t(PHASE_LABELS[currentRun.progress.phase] ?? currentRun.progress.phase)}
 							</span>
 						{/if}
 					</div>
 					{#if crawlActive}
 						<div class="mt-1 text-xs text-gray-500">
-							{$i18n.t('Pages')}: {currentRun.progress?.pages ?? 0} Â· {$i18n.t('Files')}:
-							{currentRun.progress?.files ?? 0} Â· {$i18n.t('Other resources')}:
-							{currentRun.progress?.resources ?? 0} Â· {$i18n.t('Errors')}:
-							{currentRun.progress?.errors ?? 0} Â· {$i18n.t('Downloaded')}:
+							{$i18n.t('Pages')}: {currentRun.progress?.pages ?? 0} · {$i18n.t('Files')}:
+							{currentRun.progress?.files ?? 0} · {$i18n.t('Other resources')}:
+							{currentRun.progress?.resources ?? 0} · {$i18n.t('Errors')}:
+							{currentRun.progress?.errors ?? 0} · {$i18n.t('Downloaded')}:
 							{humanSize(currentRun.progress?.bytes_downloaded ?? 0)}
 						</div>
 					{/if}
@@ -820,7 +863,13 @@
 								{$i18n.t('Pages rendered with JavaScript')}: {resultsRun.progress.rendered}
 							</div>
 						{/if}
-						{#if resultsRun.progress?.render_error}
+						{#if resultsRun.progress?.discovery_warnings?.length}
+                            <div class="mt-2 rounded-lg border border-amber-200 p-3 text-xs text-amber-800 dark:border-amber-800 dark:text-amber-200">
+                                <p class="font-medium">{$i18n.t('Discovery may be incomplete')}</p>
+                                {#each resultsRun.progress.discovery_warnings as warning}<p class="mt-1">{$i18n.t(warning)}</p>{/each}
+                            </div>
+                        {/if}
+                        {#if resultsRun.progress?.render_error}
 							<div class="text-amber-600">
 								{$i18n.t(
 									'Some pages need JavaScript to show their text, but rendering is not available:'
@@ -859,20 +908,20 @@
 									)}
 								</span>
 								{#if extendActive}
-									Â· {resultsRun.extend_progress?.done ?? 0} / {resultsRun.extend_progress?.total ??
+									· {resultsRun.extend_progress?.done ?? 0} / {resultsRun.extend_progress?.total ??
 										0}
 								{/if}
 								{#if !extendActive && resultsRun.extend_status !== 'failed'}
-									Â· {$i18n.t('Embedded')}: {resultsRun.extend_progress?.embedded ?? 0} Â· {$i18n.t(
+									· {$i18n.t('Embedded')}: {resultsRun.extend_progress?.embedded ?? 0} · {$i18n.t(
 										'Unchanged'
-									)}: {resultsRun.extend_progress?.unchanged ?? 0} Â· {$i18n.t('Removed')}:
-									{resultsRun.extend_progress?.removed ?? 0} Â· {$i18n.t('No text')}:
-									{resultsRun.extend_progress?.no_text ?? 0} Â· {$i18n.t('Failed')}:
-									{resultsRun.extend_progress?.failed ?? 0} Â· {$i18n.t('Skipped')}:
+									)}: {resultsRun.extend_progress?.unchanged ?? 0} · {$i18n.t('Removed')}:
+									{resultsRun.extend_progress?.removed ?? 0} · {$i18n.t('No text')}:
+									{resultsRun.extend_progress?.no_text ?? 0} · {$i18n.t('Failed')}:
+									{resultsRun.extend_progress?.failed ?? 0} · {$i18n.t('Skipped')}:
 									{resultsRun.extend_progress?.skipped_limit ?? 0}
 								{/if}
 								{#if resultsRun.extend_status === 'failed' && resultsRun.extend_error}
-									Â· {resultsRun.extend_error}
+									· {resultsRun.extend_error}
 								{/if}
 							</div>
 						{/if}
@@ -933,6 +982,31 @@
 								{$i18n.t('Nothing found')}
 							</div>
 						{:else if activeTab === 'page'}
+							<div class="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+								<button
+									type="button"
+									aria-pressed={pageView === 'tree'}
+									class="rounded border px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 {pageView ===
+									'tree'
+										? 'bg-gray-100 font-semibold dark:bg-gray-800'
+										: ''}"
+									on:click={() => (pageView = 'tree')}>{$i18n.t('Tree')}</button
+								>
+								<button
+									type="button"
+									aria-pressed={pageView === 'list'}
+									class="rounded border px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 {pageView ===
+									'list'
+										? 'bg-gray-100 font-semibold dark:bg-gray-800'
+										: ''}"
+									on:click={() => (pageView = 'list')}>{$i18n.t('List')}</button
+								>
+								<span class="text-gray-500"
+									>{$i18n.t(
+										'Grouped by the page where each link was first found. Search shows matching pages as a list.'
+									)}</span
+								>
+							</div>
 							<table class="w-full text-left text-xs">
 								<thead class="text-gray-500">
 									<tr class="border-b border-gray-100 dark:border-gray-850">
@@ -944,7 +1018,7 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each visibleItems as item (item.id)}
+									{#each pageRows.slice(0, visibleCount) as { item, level, hasChildren } (item.id)}
 										<tr class="border-b border-gray-50 dark:border-gray-900">
 											<td class="px-3 py-2">
 												<input
@@ -955,7 +1029,32 @@
 												/>
 											</td>
 											<td class="max-w-64 truncate px-3 py-2" title={pageDisplayTitle(item)}>
-												{pageDisplayTitle(item)}
+												<div
+													class="flex items-center gap-1"
+													style:padding-left={`${Math.min(level, 20) * 18}px`}
+												>
+													{#if hasChildren}
+														<button
+															type="button"
+															class="h-6 w-6 shrink-0 rounded hover:bg-gray-200 dark:hover:bg-gray-800"
+															aria-expanded={!collapsedPages.has(item.url)}
+															aria-label={$i18n.t('Toggle child pages')}
+															on:click={() => toggleBranch(item.url)}
+															>{collapsedPages.has(item.url) ? '▸' : '▾'}</button
+														>
+													{:else}<span class="inline-block w-6 shrink-0" aria-hidden="true"
+															>{level ? '↳' : ''}</span
+														>{/if}
+													<span class="truncate">{pageDisplayTitle(item)}</span>
+												</div>
+												{#if item.found_on}<a
+														class="mt-1 block truncate text-gray-500 hover:underline"
+														href={item.found_on}
+														target="_blank"
+														rel="noopener noreferrer"
+														title={item.found_on}
+														>{$i18n.t('Found on')}: {item.found_on_title || item.found_on}</a
+													>{/if}
 											</td>
 											<td class="max-w-80 truncate px-3 py-2">
 												<a
@@ -966,7 +1065,7 @@
 													title={item.url}>{item.url}</a
 												>
 											</td>
-											<td class="px-3 py-2">{item.depth ?? 'â€”'}</td>
+											<td class="px-3 py-2">{item.depth ?? '—'}</td>
 											<td class="px-3 py-2 {statusClass(item)}" title={item.extract_error ?? ''}>
 												{statusText(item)}
 											</td>
@@ -999,9 +1098,9 @@
 												/>
 											</td>
 											<td class="max-w-48 truncate px-3 py-2" title={item.name ?? ''}>
-												{item.name ?? 'â€”'}
+												{item.name ?? '—'}
 											</td>
-											<td class="px-3 py-2">{(item.file_type ?? '').toUpperCase() || 'â€”'}</td>
+											<td class="px-3 py-2">{(item.file_type ?? '').toUpperCase() || '—'}</td>
 											<td class="px-3 py-2">{humanSize(item.size)}</td>
 											<td class="max-w-64 truncate px-3 py-2">
 												<a
@@ -1022,7 +1121,7 @@
 														title={item.found_on}>{item.found_on_title || item.found_on}</a
 													>
 												{:else}
-													â€”
+													—
 												{/if}
 											</td>
 											<td class="px-3 py-2 {statusClass(item)}" title={item.extract_error ?? ''}>
@@ -1048,9 +1147,9 @@
 									{#each visibleItems as item (item.id)}
 										<tr class="border-b border-gray-50 align-top dark:border-gray-900">
 											<td class="max-w-48 truncate px-3 py-2" title={item.name ?? ''}>
-												{item.name ?? 'â€”'}
+												{item.name ?? '—'}
 											</td>
-											<td class="px-3 py-2">{item.file_type ?? 'â€”'}</td>
+											<td class="px-3 py-2">{item.file_type ?? '—'}</td>
 											<td class="max-w-64 truncate px-3 py-2">
 												<a
 													class="hover:underline"
@@ -1070,13 +1169,13 @@
 														title={item.found_on}>{item.found_on_title || item.found_on}</a
 													>
 												{:else}
-													â€”
+													—
 												{/if}
 											</td>
 											<td class="px-3 py-2">{humanSize(item.size)}</td>
 											<td class="max-w-80 px-3 py-2">
 												<div class="truncate" title={item.link_text ?? ''}>
-													{item.link_text ?? 'â€”'}
+													{item.link_text ?? '—'}
 												</div>
 												{#if item.context}
 													<div class="line-clamp-2 text-gray-500" title={item.context}>
@@ -1120,7 +1219,7 @@
 														title={item.found_on}>{item.found_on_title || item.found_on}</a
 													>
 												{:else}
-													â€”
+													—
 												{/if}
 											</td>
 											<td class="px-3 py-2 {statusClass(item)}">
@@ -1129,7 +1228,7 @@
 													<div class="mt-1 max-w-80 text-xs">{item.context}</div>
 												{/if}
 											</td>
-											<td class="px-3 py-2">{item.depth ?? 'â€”'}</td>
+											<td class="px-3 py-2">{item.depth ?? '—'}</td>
 										</tr>
 									{/each}
 								</tbody>
@@ -1137,13 +1236,15 @@
 						{/if}
 					</div>
 
-					{#if filteredItems.length > visibleCount}
+					{#if (activeTab === 'page' ? pageRows.length : filteredItems.length) > visibleCount}
 						<div class="flex justify-center px-3 py-2">
 							<button
 								class={secondaryButtonClass}
 								on:click={() => (visibleCount = visibleCount + PAGE_SIZE)}
 							>
-								{$i18n.t('Show more')} ({filteredItems.length - visibleCount})
+								{$i18n.t('Show more')} ({(activeTab === 'page'
+									? pageRows.length
+									: filteredItems.length) - visibleCount})
 							</button>
 						</div>
 					{/if}

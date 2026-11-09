@@ -1,8 +1,8 @@
 """JavaScript rendering for the widget crawler (React, Vite, Vue and other client-rendered sites).
 
-Pages are fetched with plain HTTP first. Only pages whose HTML has no readable text, which is what
-a single-page app shell looks like, are loaded again in headless Chromium. The browser starts on the
-first page that needs it, so sites that serve normal HTML never start one.
+Pages are fetched with plain HTTP first. App shells with missing readable text or navigation
+are loaded again in headless Chromium. The browser starts on the first page that needs it.
+Public JSON download links are collected alongside the rendered DOM.
 
 Every request the browser makes goes through route interception and is fetched by an SSRF-safe
 aiohttp session, so the browser can never reach an address the crawler itself may not.
@@ -27,7 +27,8 @@ from open_webui.retrieval.web.utils import (
     validate_url,
 )
 from open_webui.utils.widget_crawl_fetch import widget_http_session
-from open_webui.utils.widget_crawl_urls import MAX_REDIRECTS, MIN_PAGE_TEXT_CHARS
+from open_webui.utils.widget_crawl_discovery import json_links, discovery_html
+from open_webui.utils.widget_crawl_urls import MAX_REDIRECTS, MIN_PAGE_TEXT_CHARS, MAX_LINKED_ITEMS, CONTENT_TYPE_TO_FILE_TYPE
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,19 @@ def needs_rendering(mode: str, html: str, text: str) -> bool:
         return True
     if len(text.strip()) < MIN_PAGE_TEXT_CHARS:
         return True
+    # SSR can provide both text and a few anchors while hydration adds document
+    # lists or navigation later. Do not use initial text as proof of completeness.
+    if re.search(r'__NEXT_DATA__|__next_f|__NUXT_DATA__|data-reactroot', html):
+        return True
+    if _MODULE_SCRIPT_RE.search(html) and re.search(
+        r'id=["\'](?:root|app|__next|__nuxt)["\']', html, re.IGNORECASE
+    ):
+        return True
+    # Extracted hydration data can contain text while the DOM still has no navigation.
+    if not re.search(r'<a\b[^>]*\bhref\s*=', html, re.IGNORECASE) and re.search(
+        r'__NEXT_DATA__|__next_f|<script[^>]+type=["\']module["\']', html, re.IGNORECASE
+    ):
+        return True
     # Some shells ship a little static text (a "loading" line, a noscript notice) next to the app.
     return bool(_APP_ROOT_RE.search(html) and _MODULE_SCRIPT_RE.search(html) and len(text.strip()) < 500)
 
@@ -89,6 +103,7 @@ class CrawlRenderer:
         self.error: Optional[str] = None
         self.engine: Optional[str] = None
         self.pages_rendered = 0
+        self.discovery_warnings: set[str] = set()
         self.bytes_downloaded = 0
         self._lock = asyncio.Lock()
         self._playwright = None
@@ -166,6 +181,7 @@ class CrawlRenderer:
         context = await self._browser.new_context(java_script_enabled=True, service_workers='block')
         # Pages render in parallel, so each counts its own downloads.
         downloaded = [0]
+        discovered_links = {}
         failed_resources: list[str] = []
         try:
             page = await context.new_page()
@@ -174,7 +190,7 @@ class CrawlRenderer:
                     address = urlsplit(request.url)._replace(query='', fragment='').geturl()
                     failed_resources.append(address)
             page.on('requestfailed', record_failure)
-            await page.route('**/*', lambda route: self._intercept(route, downloaded))
+            await page.route('**/*', lambda route: self._intercept(route, downloaded, discovered_links))
             await page.route_web_socket('**/*', lambda ws_route: ws_route.close())
 
             try:
@@ -203,7 +219,14 @@ class CrawlRenderer:
                 log.info('Widget crawl: DOM load timed out for %s; checking rendered content', url)
 
             await self._settle(page)
+            # Unknown click-only controls cannot be inferred safely from HTML.
+            unresolved = await page.locator('button:not([disabled]), [role="link"]:not(a), [onclick]').evaluate_all(
+                "els => els.filter(e => !e.closest('form') && !e.querySelector('a[href]') && !e.hasAttribute('data-href') && !e.hasAttribute('data-url')).length"
+            )
+            if unresolved:
+                self.discovery_warnings.add('Some pages contain interactive controls without declared URLs. Click-only navigation or downloads may require additional page URLs or a site integration.')
             html = await page.content()
+            html += discovery_html(discovered_links)
             self.pages_rendered += 1
             return RenderResult(
                 url=page.url, status='ok', http_status=response.status, html=html, bytes_downloaded=downloaded[0],
@@ -233,7 +256,7 @@ class CrawlRenderer:
         except Exception:
             pass
 
-    async def _intercept(self, route, downloaded: list[int]) -> None:
+    async def _intercept(self, route, downloaded: list[int], discovered_links: dict | None = None) -> None:
         request = route.request
         if request.resource_type in BLOCKED_RESOURCE_TYPES or not request.url.startswith(('http://', 'https://')):
             await route.abort()
@@ -278,6 +301,18 @@ class CrawlRenderer:
                         body.extend(chunk)
                         if len(body) > MAX_RESOURCE_BYTES:
                             raise ValueError('Resource too large')
+                    if discovered_links is not None and len(discovered_links) < MAX_LINKED_ITEMS and response.status == 200:
+                        mime = response.headers.get('Content-Type', '').split(';')[0].lower()
+                        disposition = response.headers.get('Content-Disposition', '').lower()
+                        if mime in CONTENT_TYPE_TO_FILE_TYPE or disposition.startswith('attachment'):
+                            discovered_links[current] = ''
+                    if (discovered_links is not None and len(discovered_links) < MAX_LINKED_ITEMS
+                            and request.resource_type in {'fetch', 'xhr'} and response.status == 200
+                            and 'json' in response.headers.get('Content-Type', '').lower()):
+                        for link, title in json_links(bytes(body), current).items():
+                            if len(discovered_links) >= MAX_LINKED_ITEMS:
+                                break
+                            discovered_links[link] = title
                     self.bytes_downloaded += len(body)
                     downloaded[0] += len(body)
                     fulfilled_headers = _fulfillable_response_headers(hop_cookies + list(response.headers.items()))

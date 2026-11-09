@@ -48,7 +48,13 @@
 	let saving = false;
 	let widgets: ChatWidget[] = [];
 	let configTab = 'setup';
-	const configTabs = [{id: 'setup', label: 'Setup'}, {id: 'appearance', label: 'Appearance'}, {id: 'sources', label: 'Website & files'}, {id: 'feedback', label: 'Feedback'}, {id: 'conversations', label: 'Conversations'}];
+	const configTabs = [
+		{ id: 'setup', label: 'Setup' },
+		{ id: 'appearance', label: 'Appearance' },
+		{ id: 'sources', label: 'Website & files' },
+		{ id: 'feedback', label: 'Feedback' },
+		{ id: 'conversations', label: 'Conversations' }
+	];
 	let selectedWidget: ChatWidget | null = null;
 	let deleteTarget: ChatWidget | null = null;
 	let showDeleteConfirm = false;
@@ -122,7 +128,7 @@
 	];
 
 	const resetForm = () => {
-        configTab = 'setup';
+		configTab = 'setup';
 		selectedWidget = null;
 		conversations = [];
 		conversationMessages = [];
@@ -520,17 +526,74 @@
 
 {#if loaded}
 	<div class="mx-auto w-full max-w-7xl py-3">
-        <nav aria-label="Widget configuration" class="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3 dark:border-gray-800">
-            {#each configTabs as tab}
-                <button type="button" aria-pressed={configTab === tab.id}
-                    disabled={!selectedWidget && !['setup', 'appearance'].includes(tab.id)}
-                    on:click={() => configTab = tab.id}
-                    class="rounded-lg px-4 py-2 text-sm disabled:opacity-40 {configTab === tab.id ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 dark:bg-gray-850'}">{$i18n.t(tab.label)}</button>
-            {/each}
-        </nav>
-        {#if !selectedWidget}<p class="mb-3 text-xs text-gray-500">{$i18n.t('Create the widget to add website content, files and view activity.')}</p>{/if}
+		<div
+			class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800"
+		>
+			<div class="min-w-0">
+				<p class="text-xs text-gray-500">
+					{selectedWidget ? $i18n.t('Editing widget') : $i18n.t('New widget · not created yet')}
+				</p>
+				<h2 class="truncate text-lg font-semibold">
+					{form.name.trim() || $i18n.t('Untitled widget')}
+				</h2>
+				<p class="text-xs text-gray-500">
+					{selectedWidget
+						? selectedWidget.enabled
+							? $i18n.t('Enabled')
+							: $i18n.t('Disabled')
+						: $i18n.t('Complete Setup, then create your widget')}
+				</p>
+			</div>
+			<div class="flex items-center gap-2">
+				<select
+					aria-label={$i18n.t('Select widget')}
+					class="max-w-64 rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+					value={selectedWidget?.id ?? ''}
+					on:change={(event) => {
+						const widget = widgets.find((entry) => entry.id === event.currentTarget.value);
+						if (widget) editWidget(widget);
+						else resetForm();
+					}}
+				>
+					<option value="">{$i18n.t('New widget')}</option>
+					{#each widgets as widget (widget.id)}<option value={widget.id}>{widget.name}</option
+						>{/each}
+				</select>
+				<button
+					type="button"
+					class="rounded-lg bg-gray-100 px-3 py-2 text-sm dark:bg-gray-850"
+					on:click={resetForm}>{$i18n.t('New widget')}</button
+				>
+			</div>
+		</div>
+		<nav
+			aria-label="Widget configuration"
+			class="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3 dark:border-gray-800"
+		>
+			{#each configTabs as tab}
+				<button
+					type="button"
+					aria-pressed={configTab === tab.id}
+					disabled={!selectedWidget && !['setup', 'appearance'].includes(tab.id)}
+					on:click={() => (configTab = tab.id)}
+					title={!selectedWidget && !['setup', 'appearance'].includes(tab.id)
+						? $i18n.t('Create the widget first')
+						: $i18n.t(tab.label)}
+					class="rounded-lg px-4 py-2 text-sm transition-colors hover:ring-1 hover:ring-gray-400 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 {configTab ===
+					tab.id
+						? 'bg-black text-white dark:bg-white dark:text-black'
+						: 'bg-gray-100 dark:bg-gray-850'}">{$i18n.t(tab.label)}</button
+				>
+			{/each}
+		</nav>
+		{#if !selectedWidget}<p class="mb-3 text-xs text-gray-500">
+				{$i18n.t('Create the widget to add website content, files and view activity.')}
+			</p>{/if}
 
-		<div style:display={!['setup', 'appearance'].includes(configTab) ? 'none' : undefined} class="grid grid-cols-1 xl:grid-cols-[minmax(280px,420px)_1fr] gap-3">
+		<div
+			style:display={!['setup', 'appearance'].includes(configTab) ? 'none' : undefined}
+			class="grid grid-cols-1 xl:grid-cols-[minmax(280px,420px)_1fr] gap-3"
+		>
 			<section class="min-w-0">
 				<div class="flex items-center justify-between pb-2">
 					<div class="text-lg font-medium text-gray-900 dark:text-gray-100">
@@ -626,7 +689,10 @@
 					</div>
 				</div>
 
-				<div style:display={configTab !== 'setup' ? 'none' : undefined} class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+				<div
+					style:display={configTab !== 'setup' ? 'none' : undefined}
+					class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4"
+				>
 					<div class="space-y-3">
 						<label class="block">
 							<div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -665,7 +731,11 @@
 								class="min-h-28 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
 								bind:value={form.system_prompt}
 							></textarea>
-							<p class="mt-1 text-xs text-gray-500">{$i18n.t('Leave blank to use the default instructions for context-only answers, uncertainty, and privacy. Custom instructions replace the default.')}</p>
+							<p class="mt-1 text-xs text-gray-500">
+								{$i18n.t(
+									'Leave blank to use the default instructions for context-only answers, uncertainty, and privacy. Custom instructions replace the default.'
+								)}
+							</p>
 						</label>
 
 						<label class="block">
@@ -676,7 +746,9 @@
 								class="min-h-20 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400 dark:border-gray-800"
 								bind:value={form.welcome_message}
 							></textarea>
-							<p class="mt-1 text-xs text-gray-500">{$i18n.t('Leave blank to use the default welcome message.')}</p>
+							<p class="mt-1 text-xs text-gray-500">
+								{$i18n.t('Leave blank to use the default welcome message.')}
+							</p>
 						</label>
 					</div>
 
@@ -859,7 +931,10 @@
 					</div>
 				</div>
 
-				<div style:display={configTab !== 'appearance' ? 'none' : undefined} class="border-t border-gray-100 p-4 dark:border-gray-850">
+				<div
+					style:display={configTab !== 'appearance' ? 'none' : undefined}
+					class="border-t border-gray-100 p-4 dark:border-gray-850"
+				>
 					<div class="mb-3 text-sm font-medium">{$i18n.t('Appearance')}</div>
 					<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 						<div class="space-y-4">
@@ -1282,17 +1357,20 @@
 		{#if selectedWidget}
 			{#key selectedWidget.id}
 				<div style:display={configTab !== 'sources' ? 'none' : undefined}>
-                    <WidgetCrawl widget={selectedWidget} />
-                    <WidgetUploads widgetId={selectedWidget.id} />
-                </div>
-                <div style:display={configTab !== 'feedback' ? 'none' : undefined}>
-                    <WidgetFeedback widgetId={selectedWidget.id} />
-                </div>
+					<WidgetCrawl widget={selectedWidget} />
+					<WidgetUploads widgetId={selectedWidget.id} />
+				</div>
+				<div style:display={configTab !== 'feedback' ? 'none' : undefined}>
+					<WidgetFeedback widgetId={selectedWidget.id} />
+				</div>
 			{/key}
 		{/if}
 
 		{#if selectedWidget}
-			<section style:display={configTab !== 'conversations' ? 'none' : undefined} class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850">
+			<section
+				style:display={configTab !== 'conversations' ? 'none' : undefined}
+				class="mt-3 rounded-lg border border-gray-100 dark:border-gray-850"
+			>
 				<div
 					class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-850"
 				>
