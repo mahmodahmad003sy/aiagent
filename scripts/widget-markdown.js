@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+export { mountApp } from './widget-apps.js';
 
 // Shared by streaming, completed and restored widget answers. No remote assets.
 export function renderMarkdown(text) {

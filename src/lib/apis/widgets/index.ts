@@ -102,6 +102,8 @@ export type ChatWidget = {
 	enabled: boolean;
 	allowed_domains?: string[] | null;
 	theme: ChatWidgetTheme;
+	mcp_apps_enabled: boolean;
+	mcp_app_tool_ids: string[];
 	mcp_enabled: boolean;
 	mcp_tool_ids: string[];
 	session_idle_minutes: number;
@@ -120,6 +122,8 @@ export type ChatWidgetForm = {
 	enabled: boolean;
 	allowed_domains: string[];
 	theme: ChatWidgetTheme;
+	mcp_apps_enabled: boolean;
+	mcp_app_tool_ids: string[];
 	mcp_enabled: boolean;
 	mcp_tool_ids: string[];
 	session_idle_minutes: number;

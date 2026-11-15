@@ -92,6 +92,9 @@ class MCPClient:
         self.event_caller = event_caller
         self.server_name = server_name
         self.instructions: Optional[str] = None
+        self.app_tools = {}
+        self.widget_turn = None
+        self.widget_session_id = None
 
     async def elicit(self, context, params):
         try:
@@ -169,6 +172,11 @@ class MCPClient:
 
         tool_specs = []
         for tool in tools:
+            ui = (getattr(tool, 'meta', None) or {}).get('ui', {})
+            if ui:
+                self.app_tools[tool.name] = ui
+            if 'model' not in ui.get('visibility', ['model', 'app']):
+                continue
             name = tool.name
             description = tool.description
 
@@ -190,6 +198,18 @@ class MCPClient:
             tool_call_timeout = timedelta(seconds=AIOHTTP_CLIENT_TIMEOUT_TOOL_SERVER)
 
         result = await self.session.call_tool(function_name, function_args, read_timeout_seconds=tool_call_timeout)
+        # A login gate means the operation has NOT started. Pause it privately;
+        # never retry arbitrary errors or writes whose outcome is uncertain.
+        meta = getattr(result, 'meta', None) or {}
+        if meta.get('odoo/authRequired') and self.widget_turn and self.widget_session_id:
+            if not getattr(self.widget_turn, 'allow_apps', True):
+                return [{'type': 'text', 'text': 'Please use the chat widget to sign in privately. This action has not run. Never request credentials in chat.'}]
+            from open_webui.utils.mcp.widget_apps import authenticate
+            uri = (meta.get('ui') or {}).get('resourceUri')
+            if uri and await authenticate(self, self.widget_turn, self.widget_session_id, uri):
+                result = await self.session.call_tool(function_name, function_args, read_timeout_seconds=tool_call_timeout)
+            else:
+                return [{'type': 'text', 'text': 'Sign-in was not completed. The requested action has not run. Do not request credentials in chat.'}]
         if not result:
             raise Exception('No result returned from MCP tool call.')
 

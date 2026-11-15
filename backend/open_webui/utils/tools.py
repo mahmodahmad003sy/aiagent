@@ -192,6 +192,15 @@ async def build_tool_server_headers(
     if metadata.get('widget_session_id'):
         headers[WIDGET_SESSION_HEADER] = metadata['widget_session_id']
 
+    # Scope the private host credential to one exact configured Odoo endpoint.
+    # It authenticates identity headers; it is never an Odoo user password.
+    odoo_url = os.getenv('ODOO_MCP_URL', '').rstrip('/')
+    odoo_secret = os.getenv('ODOO_MCP_HOST_SECRET', '')
+    if odoo_url and odoo_secret and connection.get('url', '').rstrip('/') == odoo_url:
+        headers['X-Odoo-Host-Secret'] = odoo_secret
+        if user and not metadata.get('widget_session_id'):
+            headers['X-OpenWebUI-User-Id'] = user.id
+
     # Add user info headers if enabled
     if ENABLE_FORWARD_USER_INFO_HEADERS and user:
         headers = include_user_info_headers(headers, user)
@@ -249,6 +258,10 @@ async def connect_mcp_server(
         event_caller=extra_params.get('__event_call__') if metadata.get('session_id') else None,
         server_name=server_id,
     )
+    if metadata.get('widget_session_id'):
+        from open_webui.utils.widget_stream import get_widget_turn
+        client.widget_session_id = metadata['widget_session_id']
+        client.widget_turn = get_widget_turn(metadata.get('message_id'))
     try:
         await client.connect(
             url=mcp_server_connection.get('url', ''),
@@ -425,6 +438,11 @@ async def get_tools(request: Request, tool_ids: list[str], user: UserModel, extr
                 # convert to function that takes only model params and inserts custom params
                 function_name = spec['name']
                 tool_function = getattr(module, function_name)
+                if tool_id in getattr(request.state, 'widget_app_bridge_ids', set()):
+                    from open_webui.utils.mcp.widget_bridges import wrap_bridge
+                    tool_function = wrap_bridge(tool_function, request, tool_id,
+                                                (extra_params.get('__metadata__') or {}).get('message_id'))
+
                 callable = await get_async_tool_function_and_apply_extra_params(
                     tool_function,
                     {

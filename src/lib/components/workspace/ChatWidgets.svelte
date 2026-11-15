@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { getContext, onMount } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
@@ -65,6 +66,7 @@
 	let showConversationDeleteConfirm = false;
 	let conversationsLoading = false;
 	let messagesLoading = false;
+	let appBridges: { id: string; name: string }[] = [];
 	let mcpServers: { id: string; name: string; description: string; authenticated?: boolean }[] = [];
 	let avatarInputElement: HTMLInputElement;
 
@@ -75,6 +77,8 @@
 		welcome_message: DEFAULT_WIDGET_WELCOME_MESSAGE,
 		enabled: true,
 		allowed_domains: [],
+		mcp_apps_enabled: false,
+		mcp_app_tool_ids: [],
 		mcp_enabled: false,
 		mcp_tool_ids: [],
 		session_idle_minutes: 30,
@@ -141,6 +145,8 @@
 			welcome_message: DEFAULT_WIDGET_WELCOME_MESSAGE,
 			enabled: true,
 			allowed_domains: [],
+			mcp_apps_enabled: false,
+			mcp_app_tool_ids: [],
 			mcp_enabled: false,
 			mcp_tool_ids: [],
 			session_idle_minutes: 30,
@@ -161,6 +167,8 @@
 			welcome_message: widget.welcome_message?.trim() || DEFAULT_WIDGET_WELCOME_MESSAGE,
 			enabled: widget.enabled,
 			allowed_domains: widget.allowed_domains ?? [],
+			mcp_apps_enabled: widget.mcp_apps_enabled ?? false,
+			mcp_app_tool_ids: [...(widget.mcp_app_tool_ids ?? [])],
 			mcp_enabled: widget.mcp_enabled,
 			mcp_tool_ids: [...(widget.mcp_tool_ids ?? [])],
 			session_idle_minutes: widget.session_idle_minutes ?? 30,
@@ -311,6 +319,10 @@
 		}
 		if (!payload.model_id) {
 			toast.error($i18n.t('Model is required'));
+			return;
+		}
+		if (form.mcp_apps_enabled && !form.mcp_app_tool_ids.length) {
+			toast.error($i18n.t('Select at least one MCP App Bridge'));
 			return;
 		}
 		if (form.mcp_enabled && form.mcp_tool_ids.length === 0) {
@@ -496,7 +508,17 @@
 			}
 		]);
 		resetForm();
-		const tools = await getTools(localStorage.token).catch(() => []);
+		appBridges = await fetch(`${WEBUI_API_BASE_URL}/widgets/app-bridges`, {
+			headers: { Authorization: `Bearer ${localStorage.token}` }
+		})
+			.then((r) => (r.ok ? r.json() : []))
+			.catch(() => []);
+		const tools: {
+			id: string;
+			name: string;
+			meta?: { description?: string };
+			authenticated?: boolean;
+		}[] = await getTools(localStorage.token).catch(() => []);
 		mcpServers = (tools ?? [])
 			.filter((tool) => tool.id.startsWith('server:mcp:'))
 			.map((tool) => ({
@@ -777,6 +799,44 @@
 								placeholder={'example.com\n*.example.com'}
 							></textarea>
 						</label>
+
+						<div class="rounded-lg border border-gray-100 p-3 dark:border-gray-850">
+							<div class="flex items-center justify-between gap-3">
+								<div>
+									<div class="text-sm font-medium">MCP Apps</div>
+									<div class="text-xs text-gray-500">
+										Interactive apps from Workspace MCP App Bridges
+									</div>
+								</div>
+								<Switch bind:state={form.mcp_apps_enabled} ariaLabel="MCP Apps" />
+							</div>
+							{#if form.mcp_apps_enabled}
+								{#if !appBridges.length}<p class="mt-3 text-xs text-gray-500">
+										No MCP App Bridges available. Install one in Workspace &gt; Tools.
+									</p>{/if}
+								{#each appBridges as bridge (bridge.id)}
+									<label class="mt-2 flex items-center gap-2 text-sm"
+										><input
+											type="checkbox"
+											value={bridge.id}
+											bind:group={form.mcp_app_tool_ids}
+										/>{bridge.name}</label
+									>
+								{/each}
+								{#each form.mcp_app_tool_ids.filter((id) => !appBridges.some((b) => b.id === id)) as id}
+									<div class="mt-2 text-xs text-amber-600">
+										Unavailable: {id}
+										<button
+											type="button"
+											on:click={() =>
+												(form.mcp_app_tool_ids = form.mcp_app_tool_ids.filter(
+													(value) => value !== id
+												))}>Remove</button
+										>
+									</div>
+								{/each}
+							{/if}
+						</div>
 
 						<div class="rounded-lg border border-gray-100 p-3 dark:border-gray-850">
 							<div class="flex items-center justify-between gap-3">
@@ -1320,7 +1380,7 @@
 						<ChatWidgetPreview
 							theme={form.theme}
 							name={form.name}
-							welcomeMessage={form.welcome_message}
+							welcomeMessage={form.welcome_message ?? null}
 						/>
 					</div>
 				</div>

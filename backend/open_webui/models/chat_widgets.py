@@ -176,6 +176,8 @@ class ChatWidget(Base):
     enabled = Column(Boolean, nullable=False, default=True, index=True)
     allowed_domains = Column(JSON, nullable=True)
     theme = Column(JSON, nullable=True)
+    mcp_apps_enabled = Column(Boolean, nullable=False, default=False)
+    mcp_app_tool_ids = Column(JSON, nullable=True)
     mcp_enabled = Column(Boolean, nullable=False, default=False)
     mcp_tool_ids = Column(JSON, nullable=True)
     folder_id = Column(Text, nullable=True)
@@ -253,6 +255,8 @@ class ChatWidgetModel(BaseModel):
     enabled: bool = True
     allowed_domains: Optional[list[str]] = None
     theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
+    mcp_apps_enabled: bool = False
+    mcp_app_tool_ids: list[str] = Field(default_factory=list, max_length=16)
     mcp_enabled: bool = False
     mcp_tool_ids: list[str] = Field(default_factory=list)
     folder_id: Optional[str] = None
@@ -277,7 +281,7 @@ class ChatWidgetModel(BaseModel):
     def default_theme(cls, value):
         return value or {}
 
-    @field_validator('mcp_tool_ids', mode='before')
+    @field_validator('mcp_tool_ids', 'mcp_app_tool_ids', mode='before')
     @classmethod
     def default_mcp_tool_ids(cls, value):
         return value or []
@@ -329,6 +333,8 @@ class ChatWidgetForm(BaseModel):
     enabled: bool = True
     allowed_domains: list[str] = Field(default_factory=list)
     theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
+    mcp_apps_enabled: bool = False
+    mcp_app_tool_ids: list[str] = Field(default_factory=list, max_length=16)
     mcp_enabled: bool = False
     mcp_tool_ids: list[str] = Field(default_factory=list)
     # 0 keeps a widget chat open until the page is reloaded or closed.
@@ -355,6 +361,8 @@ class ChatWidgetUpdateForm(BaseModel):
     enabled: Optional[bool] = None
     allowed_domains: Optional[list[str]] = None
     theme: Optional[ChatWidgetTheme] = None
+    mcp_apps_enabled: Optional[bool] = None
+    mcp_app_tool_ids: Optional[list[str]] = Field(default=None, max_length=16)
     mcp_enabled: Optional[bool] = None
     mcp_tool_ids: Optional[list[str]] = None
     session_idle_minutes: Optional[int] = Field(default=None, ge=0, le=MAX_SESSION_IDLE_MINUTES)

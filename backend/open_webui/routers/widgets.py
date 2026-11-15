@@ -69,6 +69,99 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class WidgetAppCall(BaseModel):
+    widget_id: str = Field(max_length=128)
+    session_id: str = Field(max_length=128)
+    visitor_id: str = Field(max_length=128)
+    app_id: str = Field(max_length=128)
+    name: str = Field(max_length=128)
+    arguments: dict = Field(default_factory=dict)
+    model_config = ConfigDict(extra='forbid')
+
+
+@router.post('/public/app/call')
+async def widget_app_call(request: Request, http_response: Response,
+                          token: Optional[str] = None, db: AsyncSession = Depends(get_async_session)):
+    # Validate size before parsing private input. Do not echo validation payloads.
+    _ensure_public_request_size(request)
+    raw = await request.body()
+    if len(raw) > PUBLIC_WIDGET_REQUEST_BODY_LIMIT:
+        raise HTTPException(413, 'Request too large')
+    try:
+        form = WidgetAppCall.model_validate_json(raw)
+    except Exception:
+        raise HTTPException(400, 'Invalid app request') from None
+    widget, _ = await _get_public_widget(request, db, token=token, widget_id=form.widget_id)
+    _set_public_cors_headers(http_response, request, widget)
+    session = await ChatWidgetSessions.get_session_by_id_and_widget_id(form.session_id, widget.id, db=db)
+    if not session or session.ended_at or session.visitor_id != form.visitor_id or is_hidden_past_grace(session.hidden_at):
+        raise HTTPException(403, 'This conversation has ended')
+    await _ensure_public_rate_limit(request, widget, form.visitor_id)
+    from open_webui.utils.mcp.widget_apps import submit
+    try:
+        return await submit(form.app_id, form.session_id, form.name, form.arguments)
+    except (ValueError, TimeoutError):
+        raise HTTPException(409, 'The form is unavailable. Please try your request again.') from None
+
+
+@router.get('/app-bridges')
+async def list_widget_app_bridges(request: Request, user=Depends(get_verified_user),
+                                  db: AsyncSession = Depends(get_async_session)):
+    from open_webui.routers.tools import get_tools
+    from open_webui.utils.mcp.widget_bridges import is_app_bridge
+    return [{'id': tool.id, 'name': tool.name} for tool in
+            await get_tools(request, query=None, user=user, db=db) if is_app_bridge(tool)]
+
+
+async def _ensure_app_bridge_access(request, ids, user, db):
+    if not ids:
+        return
+    available = {tool['id'] for tool in await list_widget_app_bridges(request, user, db)}
+    if len(ids) != len(set(ids)) or any(tool_id not in available for tool_id in ids):
+        raise HTTPException(403, 'MCP App Bridge not available')
+
+
+@router.post('/public/bridge/call')
+async def widget_bridge_call(request: Request, http_response: Response,
+                             token: Optional[str] = None, db: AsyncSession = Depends(get_async_session)):
+    _ensure_public_request_size(request)
+    raw = await request.body()
+    if len(raw) > PUBLIC_WIDGET_REQUEST_BODY_LIMIT:
+        raise HTTPException(413, 'Request too large')
+    try:
+        form = WidgetAppCall.model_validate_json(raw)
+    except Exception:
+        raise HTTPException(400, 'Invalid app request') from None
+    widget, owner = await _get_public_widget(request, db, token=token, widget_id=form.widget_id)
+    _set_public_cors_headers(http_response, request, widget)
+    session = await ChatWidgetSessions.get_session_by_id_and_widget_id(form.session_id, widget.id, db=db)
+    if not session or session.ended_at or session.visitor_id != form.visitor_id or is_hidden_past_grace(session.hidden_at):
+        raise HTTPException(403, 'This conversation has ended')
+    await _ensure_public_rate_limit(request, widget, form.visitor_id)
+    from open_webui.utils.mcp.widget_bridges import get_app
+    try:
+        app = get_app(form.app_id, session.id)
+    except ValueError:
+        raise HTTPException(409, 'App expired. Run the tool again.') from None
+    tool_id = app['tool_id']
+    if not widget.mcp_apps_enabled or tool_id not in widget.mcp_app_tool_ids:
+        raise HTTPException(403, 'App disabled')
+    await _ensure_app_bridge_access(request, [tool_id], owner, db)
+    if form.name not in {'tools/call', 'resources/read', 'resources/list'}:
+        raise HTTPException(400, 'Unsupported app method')
+    from open_webui.utils.plugin import get_tool_module_from_cache
+    from open_webui.models.tools import Tools
+    module, _ = await get_tool_module_from_cache(request, tool_id)
+    module.valves = module.Valves(**(await Tools.get_tool_valves_by_id(tool_id) or {}))
+    _set_owner_token(request, owner)
+    request.state.widget_session_id = session.id
+    try:
+        return await asyncio.wait_for(module._handle_app_request(
+            form.name, form.arguments, request, owner.model_dump(), tool_id), timeout=60)
+    except Exception:
+        raise HTTPException(502, 'The app could not connect. Please try again.') from None
+
+
 @router.get('/public/embed.js', include_in_schema=False)
 async def widget_embed_script():
     return FileResponse(Path(__file__).resolve().parents[1] / 'static/widget/chat-widget.js',
@@ -597,6 +690,9 @@ async def create_widget(
     db: AsyncSession = Depends(get_async_session),
 ):
     await _ensure_model_access(request, form_data.model_id, user, db)
+    if form_data.mcp_apps_enabled and not form_data.mcp_app_tool_ids:
+        raise HTTPException(400, 'Select at least one MCP App Bridge')
+    await _ensure_app_bridge_access(request, form_data.mcp_app_tool_ids, user, db)
     if form_data.mcp_enabled and not form_data.mcp_tool_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Select at least one MCP server')
     await _ensure_mcp_tool_access(request, form_data.mcp_tool_ids, user, db)
@@ -719,6 +815,10 @@ async def create_public_widget_chat_message(
     }
     if widget.mcp_enabled and widget.mcp_tool_ids:
         form_payload['tool_ids'] = list(widget.mcp_tool_ids)
+    if widget.mcp_apps_enabled:
+        await _ensure_app_bridge_access(request, widget.mcp_app_tool_ids, owner, db)
+        form_payload.setdefault('tool_ids', []).extend(widget.mcp_app_tool_ids)
+    request.state.widget_app_bridge_ids = set(widget.mcp_app_tool_ids) if widget.mcp_apps_enabled else set()
     if widget.knowledge_id:
         form_payload['files'] = [{'type': 'collection', 'id': widget.knowledge_id}]
 
@@ -727,6 +827,7 @@ async def create_public_widget_chat_message(
     request.state.widget_session_id = session.id
 
     turn = register_widget_turn(assistant_message_id)
+    turn.allow_apps = form_data.stream
     widget_id, session_id, model_id, owner_id = widget.id, session.id, widget.model_id, widget.user_id
 
     saved_assistant = None
@@ -1047,6 +1148,12 @@ async def update_widget_by_id(
     existing = await ChatWidgets.get_widget_for_user(widget_id, user, db=db)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+    apps_enabled = form_data.mcp_apps_enabled if form_data.mcp_apps_enabled is not None else existing.mcp_apps_enabled
+    app_ids = form_data.mcp_app_tool_ids if form_data.mcp_app_tool_ids is not None else existing.mcp_app_tool_ids
+    if apps_enabled and not app_ids:
+        raise HTTPException(400, 'Select at least one MCP App Bridge')
+    if apps_enabled or form_data.mcp_app_tool_ids is not None:
+        await _ensure_app_bridge_access(request, app_ids, user, db)
     effective_enabled = form_data.mcp_enabled if form_data.mcp_enabled is not None else existing.mcp_enabled
     effective_ids = form_data.mcp_tool_ids if form_data.mcp_tool_ids is not None else existing.mcp_tool_ids
     if effective_enabled and not effective_ids:

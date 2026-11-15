@@ -107,6 +107,10 @@ def unregister_widget_turn(message_id: str) -> None:
     _turns.pop(message_id, None)
 
 
+def get_widget_turn(message_id):
+    return _turns.get(message_id)
+
+
 def publish_widget_event(message_id: Optional[str], event: dict) -> None:
     if not message_id:
         return

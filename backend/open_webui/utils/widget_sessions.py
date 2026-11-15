@@ -142,6 +142,9 @@ async def end_widget_session(
     if not await ChatWidgetSessions.end_session(session_id, reason):
         return False
 
+    from open_webui.utils.mcp.widget_apps import cancel_session
+    cancel_session(session_id)
+
     log.info('widget.session.end widget=%s session=%s reason=%s', widget.id, session_id, reason)
 
     async def cleanup():
