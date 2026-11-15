@@ -64,6 +64,7 @@ AVATAR_DATA_URL_RE = re.compile(r'^data:image/(png|jpeg|webp|gif);base64,[A-Za-z
 AVATAR_MAX_LENGTH = 150_000
 MCP_TOOL_ID_PREFIX = 'server:mcp:'
 MAX_MCP_TOOL_IDS = 20
+MAX_MCP_APP_TOOL_IDS = 10
 DEFAULT_SESSION_IDLE_MINUTES = 30
 MAX_SESSION_IDLE_MINUTES = 24 * 60
 
@@ -163,6 +164,21 @@ def normalize_mcp_tool_ids(value: list[str] | None) -> list[str]:
     return ids
 
 
+def normalize_mcp_app_tool_ids(value: list[str] | None) -> list[str]:
+    ids = []
+    for tool_id in value or []:
+        tool_id = (tool_id or '').strip()
+        if not tool_id:
+            continue
+        if tool_id.startswith('server:') or len(tool_id) > 128:
+            raise ValueError(f'Invalid MCP App bridge id: {tool_id}')
+        if tool_id not in ids:
+            ids.append(tool_id)
+    if len(ids) > MAX_MCP_APP_TOOL_IDS:
+        raise ValueError(f'A widget can use at most {MAX_MCP_APP_TOOL_IDS} MCP App bridges')
+    return ids
+
+
 class ChatWidget(Base):
     __tablename__ = 'chat_widget'
 
@@ -178,6 +194,8 @@ class ChatWidget(Base):
     theme = Column(JSON, nullable=True)
     mcp_enabled = Column(Boolean, nullable=False, default=False)
     mcp_tool_ids = Column(JSON, nullable=True)
+    mcp_apps_enabled = Column(Boolean, nullable=False, default=False)
+    mcp_app_tool_ids = Column(JSON, nullable=True)
     folder_id = Column(Text, nullable=True)
     knowledge_id = Column(Text, nullable=True)
     session_idle_minutes = Column(BigInteger, nullable=False, default=DEFAULT_SESSION_IDLE_MINUTES)
@@ -255,6 +273,8 @@ class ChatWidgetModel(BaseModel):
     theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
     mcp_enabled: bool = False
     mcp_tool_ids: list[str] = Field(default_factory=list)
+    mcp_apps_enabled: bool = False
+    mcp_app_tool_ids: list[str] = Field(default_factory=list)
     folder_id: Optional[str] = None
     knowledge_id: Optional[str] = None
     session_idle_minutes: int = DEFAULT_SESSION_IDLE_MINUTES
@@ -277,7 +297,7 @@ class ChatWidgetModel(BaseModel):
     def default_theme(cls, value):
         return value or {}
 
-    @field_validator('mcp_tool_ids', mode='before')
+    @field_validator('mcp_tool_ids', 'mcp_app_tool_ids', mode='before')
     @classmethod
     def default_mcp_tool_ids(cls, value):
         return value or []
@@ -331,6 +351,8 @@ class ChatWidgetForm(BaseModel):
     theme: ChatWidgetTheme = Field(default_factory=ChatWidgetTheme)
     mcp_enabled: bool = False
     mcp_tool_ids: list[str] = Field(default_factory=list)
+    mcp_apps_enabled: bool = False
+    mcp_app_tool_ids: list[str] = Field(default_factory=list)
     # 0 keeps a widget chat open until the page is reloaded or closed.
     session_idle_minutes: int = Field(default=DEFAULT_SESSION_IDLE_MINUTES, ge=0, le=MAX_SESSION_IDLE_MINUTES)
     debug_logs: bool = False
@@ -346,6 +368,11 @@ class ChatWidgetForm(BaseModel):
     def normalize_mcp_tool_ids(cls, value: list[str]) -> list[str]:
         return normalize_mcp_tool_ids(value)
 
+    @field_validator('mcp_app_tool_ids')
+    @classmethod
+    def normalize_mcp_app_tool_ids(cls, value: list[str]) -> list[str]:
+        return normalize_mcp_app_tool_ids(value)
+
 
 class ChatWidgetUpdateForm(BaseModel):
     name: Optional[str] = None
@@ -357,6 +384,8 @@ class ChatWidgetUpdateForm(BaseModel):
     theme: Optional[ChatWidgetTheme] = None
     mcp_enabled: Optional[bool] = None
     mcp_tool_ids: Optional[list[str]] = None
+    mcp_apps_enabled: Optional[bool] = None
+    mcp_app_tool_ids: Optional[list[str]] = None
     session_idle_minutes: Optional[int] = Field(default=None, ge=0, le=MAX_SESSION_IDLE_MINUTES)
     debug_logs: Optional[bool] = None
     model_config = ConfigDict(extra='forbid')
@@ -374,6 +403,13 @@ class ChatWidgetUpdateForm(BaseModel):
         if value is None:
             return None
         return normalize_mcp_tool_ids(value)
+
+    @field_validator('mcp_app_tool_ids')
+    @classmethod
+    def normalize_mcp_app_tool_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        if value is None:
+            return None
+        return normalize_mcp_app_tool_ids(value)
 
 
 class ChatWidgetSessionForm(BaseModel):
