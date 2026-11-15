@@ -172,6 +172,16 @@ async def widget_embed_script():
                         })
 
 
+@router.get('/public/markdown.js', include_in_schema=False)
+async def widget_markdown_script():
+    # embed.js loads this sibling URL for Markdown and the sandboxed MCP App host.
+    return FileResponse(Path(__file__).resolve().parents[1] / 'static/widget/markdown.js',
+                        media_type='text/javascript', headers={
+                            'Cross-Origin-Resource-Policy': 'cross-origin',
+                            'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache',
+                        })
+
+
 @router.get('/public/preview.js', include_in_schema=False)
 async def widget_preview_script():
     return FileResponse(Path(__file__).resolve().parents[1] / 'static/widget/preview.js',
