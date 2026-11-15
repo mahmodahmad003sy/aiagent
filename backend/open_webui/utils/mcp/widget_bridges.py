@@ -67,11 +67,48 @@ def wrap_bridge(function, request, tool_id, message_id):
 
     @wraps(function)
     async def call(*args, **kwargs):
+        from open_webui.utils.widget_stream import get_widget_turn
+        from starlette.responses import HTMLResponse
+
+        # Some Workspace bridges emit the HTML separately and return only text.
+        # Intercept only this selected bridge's emitter, never arbitrary chat HTML.
+        emitter = kwargs.get('__event_emitter__')
+        app_results = []
+        if emitter is not None:
+            async def emit(event):
+                if isinstance(event, dict) and event.get('type') == 'embeds':
+                    data = event.get('data') or {}
+                    embeds = data.get('embeds', []) if isinstance(data, dict) else []
+                    if isinstance(embeds, list):
+                        for html in embeds[:8]:
+                            if isinstance(html, str):
+                                app_results.append(register_result(
+                                    HTMLResponse(html), tool_id, request.state.widget_session_id,
+                                    get_widget_turn(message_id)))
+                    # Do not forward wrapper HTML (or its owner RPC token) to
+                    # the normal emitter, chat history, or model context.
+                    return
+                return await emitter(event)
+            kwargs['__event_emitter__'] = emit
         result = function(*args, **kwargs)
         if isawaitable(result):
             result = await result
-        from open_webui.utils.widget_stream import get_widget_turn
+        if app_results:
+            return '\n'.join(dict.fromkeys(app_results))
         return register_result(result, tool_id, request.state.widget_session_id,
                                get_widget_turn(message_id))
 
     return call
+
+
+async def call_bridge_app(module, method, params, request, user, tool_id, chat_id):
+    """Supply a bridge's optional chat scope only from the verified session."""
+    from inspect import signature
+
+    handler = module._handle_app_request
+    context = {}
+    if 'chat_id' in signature(handler).parameters:
+        if not chat_id:
+            raise ValueError('Missing app conversation')
+        context['chat_id'] = chat_id
+    return await handler(method, params, request, user, tool_id, **context)

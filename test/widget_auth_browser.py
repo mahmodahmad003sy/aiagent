@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, *args): pass
 
-async def main():
+async def main(bridge=False):
     html = Path(os.environ.get('WIDGET_SIGN_IN_HTML', r'D:\odoo_18_mcpNirs\dist\sign-in.html')).read_text(encoding='utf-8')
     server = ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(QuietHandler, directory=str(ROOT)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -25,14 +25,16 @@ async def main():
             await page.goto(f'http://127.0.0.1:{server.server_port}/backend/open_webui/static/widget/defaults.json')
             await page.evaluate('document.body.innerHTML="<div id=app></div>"')
             await page.add_script_tag(url='/backend/open_webui/static/widget/markdown.js')
-            await page.evaluate('''html => {
+            await page.evaluate('''input => {
               window.calls=[];
-              window.disposeApp=OpenWebUIWidgetMarkdown.mountApp(document.getElementById('app'),{html},async p=>{
+              window.disposeApp=OpenWebUIWidgetMarkdown.mountApp(document.getElementById('app'),{html:input.html,bridge:input.bridge},async p=>{
+                if(input.bridge) p=p.arguments;
                 calls.push(p.name);
-                return {content:[],structuredContent:p.name==='odoo_login' ?
+                const result = {content:[],structuredContent:p.name==='odoo_login' ?
                   {authenticated:p.arguments.password==='correct',message:'Check your sign-in details.'} : {authenticated:false}};
+                return input.bridge ? {result} : result;
               });
-            }''', html)
+            }''', {'html': html, 'bridge': bridge})
             frame = page.frame_locator('iframe')
             await frame.get_by_label('Username or email').fill('alice@example.com')
             await frame.get_by_label('Password', exact=True).fill('wrong')
@@ -52,8 +54,10 @@ async def main():
             await page.evaluate('disposeApp()')
             assert await page.locator('iframe').count() == 0
             await browser.close()
-            print('PASS: real React app handshake, invalid login, password clearing, reveal, successful login, isolated iframe, cleanup')
+            print(('BRIDGE: ' if bridge else 'NATIVE: ') + 'PASS: real React app handshake, invalid login, password clearing, reveal, successful login, isolated iframe, cleanup')
     finally:
         server.shutdown()
 
-if __name__ == '__main__': asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())
+    asyncio.run(main(bridge=True))

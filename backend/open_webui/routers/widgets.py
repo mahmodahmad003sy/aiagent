@@ -138,7 +138,7 @@ async def widget_bridge_call(request: Request, http_response: Response,
     if not session or session.ended_at or session.visitor_id != form.visitor_id or is_hidden_past_grace(session.hidden_at):
         raise HTTPException(403, 'This conversation has ended')
     await _ensure_public_rate_limit(request, widget, form.visitor_id)
-    from open_webui.utils.mcp.widget_bridges import get_app
+    from open_webui.utils.mcp.widget_bridges import get_app, call_bridge_app
     try:
         app = get_app(form.app_id, session.id)
     except ValueError:
@@ -156,8 +156,9 @@ async def widget_bridge_call(request: Request, http_response: Response,
     _set_owner_token(request, owner)
     request.state.widget_session_id = session.id
     try:
-        return await asyncio.wait_for(module._handle_app_request(
-            form.name, form.arguments, request, owner.model_dump(), tool_id), timeout=60)
+        return await asyncio.wait_for(call_bridge_app(
+            module, form.name, form.arguments, request, owner.model_dump(), tool_id,
+            session.chat_id), timeout=60)
     except Exception:
         raise HTTPException(502, 'The app could not connect. Please try again.') from None
 

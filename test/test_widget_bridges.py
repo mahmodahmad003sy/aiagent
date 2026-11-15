@@ -102,7 +102,7 @@ class BridgeEndpointTests(unittest.IsolatedAsyncioTestCase):
         tree.body = [node for node in tree.body if getattr(node, 'name', '') in {'WidgetAppCall', 'widget_bridge_call'}]
         widget = SimpleNamespace(id='widget', mcp_apps_enabled=True, mcp_app_tool_ids=['bridge'])
         owner = SimpleNamespace(model_dump=lambda: {'id': 'owner'})
-        session = SimpleNamespace(id='session', ended_at=None, visitor_id='visitor', hidden_at=None)
+        session = SimpleNamespace(id='session', chat_id='private-chat', ended_at=None, visitor_id='visitor', hidden_at=None)
         authorize = AsyncMock()
         module = SimpleNamespace(Valves=lambda **kw: kw, _handle_app_request=AsyncMock(return_value={'result': {}}))
         ns = dict(locals(), asyncio=asyncio, router=APIRouter(), get_async_session=lambda: None,
@@ -167,6 +167,45 @@ class WrapperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(received, ['new'])
         self.assertIn('displayed', result)
         self.assertIn('widget_bridge_app', turn.queue.get_nowait())
+
+
+class EmittedBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_emitted_app_is_delivered_without_persisting_rpc_token(self):
+        import sys
+        from unittest.mock import AsyncMock, patch
+        turn = SimpleNamespace(queue=asyncio.Queue(), allow_apps=True)
+        request = SimpleNamespace(state=SimpleNamespace(widget_session_id='visitor'))
+        emitter = AsyncMock()
+        config = {'appHtml': '<h1>Sign in</h1>', 'rpc': {'token': 'OWNER_SECRET'}}
+        async def open_odoo_sign_in(__event_emitter__):
+            await __event_emitter__({'type': 'status', 'data': {'description': 'Preparing'}})
+            await __event_emitter__({'type': 'embeds', 'data': {
+                'embeds': ['<script>var config = ' + json.dumps(config) + ';</script>']}})
+            return 'A private sign-in form has been sent to the chat.'
+        call = bridges.wrap_bridge(open_odoo_sign_in, request, 'nirs', 'message')
+        with patch.dict(sys.modules, {'open_webui.utils.widget_stream': SimpleNamespace(get_widget_turn=lambda mid: turn)}):
+            text = await call(__event_emitter__=emitter)
+        self.assertIn('displayed', text)
+        event = turn.queue.get_nowait()
+        self.assertEqual(event['widget_bridge_app']['html'], '<h1>Sign in</h1>')
+        self.assertNotIn('OWNER_SECRET', str(event) + text + str(emitter.call_args_list))
+        emitter.assert_awaited_once_with({'type': 'status', 'data': {'description': 'Preparing'}})
+
+    async def test_scoped_and_unscoped_bridge_rpc(self):
+        from unittest.mock import AsyncMock
+        scopes = []
+        async def scoped(method, params, request, user, tool_id, chat_id):
+            scopes.append(chat_id)
+            return {'result': {'authenticated': True}}
+        module = SimpleNamespace(_handle_app_request=scoped)
+        result = await bridges.call_bridge_app(module, 'tools/call', {}, None, {}, 'nirs', 'verified-chat')
+        self.assertTrue(result['result']['authenticated'])
+        self.assertEqual(scopes, ['verified-chat'])
+        with self.assertRaises(ValueError):
+            await bridges.call_bridge_app(module, 'tools/call', {}, None, {}, 'nirs', None)
+        module._handle_app_request = AsyncMock(return_value={'result': {}})
+        await bridges.call_bridge_app(module, 'tools/call', {}, None, {}, 'generic', 'verified-chat')
+        module._handle_app_request.assert_awaited_once_with('tools/call', {}, None, {}, 'generic')
 
 
 if __name__ == '__main__':
